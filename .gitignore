@@ -1,0 +1,36 @@
+# Secrets
+.env
+*.key
+*.pem
+protected.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Données locales
+*.dump
+backups/
+pgdata/
+*.sqlite3
+
+# Fixtures brutes non anonymisées (ne commiter que tests/fixtures/*)
+tests/fixtures/raw/
+*.raw.json
+*.raw.txt
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
