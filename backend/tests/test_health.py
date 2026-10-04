@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.api.deps import require_admin
 from app.db.session import get_db
 from app.main import create_app
 
@@ -19,16 +20,26 @@ class BrokenSession:
         raise RuntimeError("base indisponible")
 
 
-def test_liveness():
+def _app_as_admin(session):
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[require_admin] = lambda: None
+    return app
+
+
+def test_liveness_is_public():
     r = TestClient(create_app()).get("/api/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
+def test_details_requires_authentication():
+    r = TestClient(create_app()).get("/api/health/details")
+    assert r.status_code == 401
+
+
 def test_details_ok():
-    app = create_app()
-    app.dependency_overrides[get_db] = lambda: OkSession()
-    r = TestClient(app).get("/api/health/details")
+    r = TestClient(_app_as_admin(OkSession())).get("/api/health/details")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
@@ -37,8 +48,6 @@ def test_details_ok():
 
 
 def test_details_returns_503_when_database_is_down():
-    app = create_app()
-    app.dependency_overrides[get_db] = lambda: BrokenSession()
-    r = TestClient(app).get("/api/health/details")
+    r = TestClient(_app_as_admin(BrokenSession())).get("/api/health/details")
     assert r.status_code == 503
     assert r.json()["database"]["ok"] is False

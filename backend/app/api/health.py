@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.core.config import get_settings
 from app.db.session import get_db
 
@@ -14,12 +15,11 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("")
 def liveness() -> dict[str, str]:
-    """Le processus répond. Ne touche pas à la base."""
+    """Le processus répond. Public, ne touche pas à la base (healthcheck Docker)."""
     return {"status": "ok"}
 
 
-# TODO Phase 3 : réserver /health/details aux administrateurs authentifiés.
-@router.get("/details")
+@router.get("/details", dependencies=[Depends(require_admin)])
 def details(response: Response, db: Session = Depends(get_db)) -> dict[str, Any]:
     settings = get_settings()
     db_ok = False
