@@ -15,18 +15,20 @@ Application SaaS interne pour :
 ## Architecture
 
 ```text
-Exit Node (tailscaled, conntrack, LocalAPI)
-        │  akwaba-agent (Python, systemd, hors Docker, aucun port entrant)
-        │  HTTPS + HMAC
+Exit Node "stray" (tailscaled, conntrack, LocalAPI)
+        │  akwaba-agent (Python 3.9, systemd, hors Docker, aucun port entrant)
+        │  HTTP sur le tailnet (chiffré WireGuard) + HMAC
         ▼
-Reverse proxy (Nginx / existant)
+Serveur Oracle (tailnet) : 100.126.200.88:8080
         ▼
-web / Nginx (SPA + /api)
+web / Nginx (SPA + /api)   ◄── admin : HTTPS via `tailscale serve --https=8443`
         ▼
 FastAPI backend (+ APScheduler)
         ▼
 PostgreSQL 16
 ```
+
+Aucun port n'est exposé sur Internet. Le conteneur `web` n'écoute que sur l'IP Tailscale du serveur.
 
 Stack : Python, FastAPI, SQLAlchemy (sync), Alembic, PostgreSQL 16, APScheduler,
 Pydantic, SPA servie par Nginx, Docker Compose (PostgreSQL, backend, scheduler, web).
@@ -64,10 +66,14 @@ SPA sobre et fonctionnelle, servie par Nginx, proxy `/api`.
 
 ## Sécurité
 
+- AKWABA n'ajoute aucun port public : accès uniquement via le tailnet.
+(L'application Next.js voisine, elle, est exposée via Tailscale Funnel : hors périmètre AKWABA.)
 - Agent → backend : HMAC-SHA256 par requête, tolérance ±300 s, anti-rejeu (`batch_id`),
   credential individuel, secrets chiffrés en base.
-- `/api/agent/` : HMAC + allowlist IP + rate limiting (l'IP seule n'authentifie jamais).
-- Admin : cookie HttpOnly / Secure / SameSite=Lax, CSRF, verrouillage après échecs.
+- `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + rate limiting
+  (l'IP seule n'authentifie jamais).
+- Admin : HTTPS via `tailscale serve`, cookie HttpOnly / Secure / SameSite=Lax, CSRF,
+  verrouillage après échecs.
 - Tailscale REST : lecture seule (`/users`, `/devices`), droits minimaux.
 - Aucun bouton web ne permet de passer en `enforce`.
 

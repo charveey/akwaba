@@ -4,6 +4,18 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - effective_cache_size=256MB
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -13,19 +25,39 @@ services:
     networks:
       - internal
     # Aucun port publié : seul le réseau Docker interne y accède.
-    # Pour déboguer ponctuellement depuis l'hôte, décommenter (loopback uniquement) :
-    # ports:
-    #   - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ./backend
+    image: akwaba-backend:0.1.0
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    ports:
+      # PHASE 1 UNIQUEMENT (test local, loopback). À retirer avec la mise en place de web.
+      - "127.0.0.1:8000:8000"
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   # --- Activés dans les phases suivantes ---
-  # backend:    (Phase 1)   FastAPI
   # scheduler:  (Phase 5+)  APScheduler, même image que backend
-  # web:        (Phase 11)  Nginx : SPA + proxy /api
+  # web:        (Phase 11)  Nginx : SPA + proxy /api. Publication prévue :
+  #   ports:
+  #     - "${TAILNET_BIND_IP}:${WEB_PORT}:80"   # JAMAIS "0.0.0.0" ni "80:80"
 
 volumes:
   pgdata:
