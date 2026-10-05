@@ -4,9 +4,18 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import tokens_equal
 from app.db.session import get_db
+from app.domain.clock import Clock, SystemClock
 from app.services.auth import AuthContext, load_session
 
 COOKIE_NAME = "akwaba_session"
+
+
+def get_clock() -> Clock:
+    return SystemClock()
+
+
+def client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 
 def require_admin(request: Request, db: Session = Depends(get_db)) -> AuthContext:
