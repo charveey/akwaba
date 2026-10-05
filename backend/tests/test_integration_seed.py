@@ -42,8 +42,11 @@ def test_plans_are_seeded(engine):
 
 def test_payment_methods_are_seeded(engine):
     with engine.connect() as c:
-        codes = {r[0] for r in c.execute(text("SELECT code FROM payment_methods"))}
-    assert {"CASH", "MOBILE_MONEY", "BANK_TRANSFER"} <= codes
+        rows = {r[0]: r[1] for r in c.execute(text("SELECT code, is_active FROM payment_methods"))}
+    expected = {"CASH", "BANK_TRANSFER", "WAVE", "MOOV_MONEY", "ORANGE_MONEY", "PAYLIB", "PAYPAL", "DJAMO"}
+    assert expected <= set(rows)
+    assert all(rows[c] for c in expected)
+    assert "MOBILE_MONEY" not in rows
 
 
 def test_migration_is_reversible_one_step(engine):
