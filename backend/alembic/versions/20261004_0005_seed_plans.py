@@ -41,5 +41,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DELETE FROM payment_methods WHERE code IN ('CASH', 'MOBILE_MONEY', 'BANK_TRANSFER')")
-    op.execute("DELETE FROM subscription_plans WHERE code IN ('M1', 'M3', 'M6', 'M12', 'PLATINUM')")
+    # Les référentiels ne sont retirés que s'ils ne sont pas utilisés.
+    op.execute(
+        """
+        DELETE FROM payment_methods
+        WHERE code IN ('CASH', 'MOBILE_MONEY', 'BANK_TRANSFER')
+          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.payment_method_id = payment_methods.id)
+        """
+    )
+    op.execute(
+        """
+        DELETE FROM subscription_plans
+        WHERE code IN ('M1', 'M3', 'M6', 'M12', 'PLATINUM')
+          AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.plan_id = subscription_plans.id)
+        """
+    )
