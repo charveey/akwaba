@@ -188,7 +188,7 @@ def _resolve_paid_at(info: PaymentInfo, clock: Clock) -> datetime:
     now = clock.now()
     paid_at = info.paid_at or now
     if paid_at > now:
-        raise _err(status.HTTP_422_UNPROCESSABLE_ENTITY, "La date de paiement ne peut pas être dans le futur")
+        raise _err(422, "La date de paiement ne peut pas être dans le futur")
     return paid_at
 
 
@@ -209,11 +209,11 @@ def _add_payment(
 ) -> Payment:
     method = db.get(PaymentMethod, info.payment_method_id)
     if method is None or not method.is_active:
-        raise _err(status.HTTP_422_UNPROCESSABLE_ENTITY, "Moyen de paiement introuvable ou inactif")
+        raise _err(422, "Moyen de paiement introuvable ou inactif")
     try:
         settled, settled_cur, rate = settlement_for(sub.currency, sub.price_amount, info.settled_amount)
     except ValueError as exc:
-        raise _err(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+        raise _err(422, str(exc))
     pay = Payment(
         subscription_id=sub.id, payment_method_id=method.id, amount=sub.price_amount, currency=sub.currency,
         paid_at=paid_at, reference=info.reference, recorded_by_admin_id=ctx.admin.id,
@@ -258,7 +258,7 @@ def create_subscription(
         raise _err(status.HTTP_409_CONFLICT, "Membre archivé")
     plan = _plan(db, data.plan_id)
     if plan.is_unlimited and data.payment is not None:
-        raise _err(status.HTTP_422_UNPROCESSABLE_ENTITY, "Plan illimité : aucun paiement")
+        raise _err(422, "Plan illimité : aucun paiement")
     _ensure_no_open_subscription(db, clock, member.id)
 
     paid_at = _resolve_paid_at(data.payment, clock) if data.payment else None
@@ -294,7 +294,7 @@ def renew_subscription(
         raise _err(status.HTTP_409_CONFLICT, "Abonnement déjà renouvelé")
     plan = _plan(db, data.plan_id or sub.plan_id)
     if plan.is_unlimited:
-        raise _err(status.HTTP_422_UNPROCESSABLE_ENTITY, "Un renouvellement ne peut pas viser un plan illimité")
+        raise _err(422, "Un renouvellement ne peut pas viser un plan illimité")
 
     paid_at = _resolve_paid_at(data.payment, clock)
     assert sub.expires_on is not None
