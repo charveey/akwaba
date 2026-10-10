@@ -123,7 +123,9 @@ def test_generates_the_right_reminder_each_day_with_message_and_no_catch_up(api)
     assert res["created"] == 1
     rem = res["reminders"][0]
     assert (rem["offset_days"], rem["due_date"], rem["status"], rem["member_name"]) == (-7, "2026-02-10", "PENDING", "Awa Koné")
-    assert rem["message"] == "Bonjour Awa, votre abonnement expire le 17 février 2026 (dans 7 jours). Pensez à le renouveler."
+    assert rem["message"] == (
+        "Bonjour,\n\nVotre abonnement de 1 mois à Akwaba VPN expire dans 7 jours. "
+        "Souhaitez-vous reconduire l'abonnement ?\n\nMerci et excellente journée à vous.")
     assert generate(api, 2026, 2, 11)["created"] == 0   # pas de rattrapage
     for day, offset in ((14, -3), (15, -2), (16, -1), (17, 0), (18, 1)):
         r = generate(api, 2026, 2, day)
@@ -240,3 +242,10 @@ def test_database_constraints(api, engine):
         raw(offset=-2, status="SENT")                    # SENT exige sent_at
     with pytest.raises(IntegrityError):
         raw(offset=-1, status="OPENED")                  # OPENED exige opened_at
+
+
+def test_after_expiry_message_uses_the_plan_duration(api):
+    sub = subscribe(api, member(api), "M3", start=(2026, 1, 17))        # expire le 2026-04-17
+    rem = next(r for r in generate(api, 2026, 4, 18)["reminders"] if r["subscription_id"] == sub["id"])
+    assert rem["offset_days"] == 1
+    assert "de 3 mois à Akwaba VPN a expiré depuis le 17 avril. Votre compte" in rem["message"]

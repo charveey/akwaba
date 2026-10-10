@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.domain.clock import Clock
 from app.domain.reminders import (
-    OFFSETS, due_date, first_name_of, is_eligible, message_text, whatsapp_link,
+    OFFSETS, due_date, is_eligible, message_text, whatsapp_link,
 )
-from app.models.billing import Subscription
+from app.models.billing import Subscription, SubscriptionPlan
 from app.models.clients import Member
 from app.models.reminders import Reminder
 from app.schemas.reminders import GenerateResult, ReminderLink, ReminderOut
@@ -79,8 +79,9 @@ def generate(db: Session, ctx: AuthContext, clock: Clock, ip: str | None) -> Gen
     # Candidates : dernières lignes de chaîne, limitées, payées, non illimitées.
     succ = select(Subscription.previous_subscription_id).where(Subscription.previous_subscription_id.is_not(None))
     candidates = db.execute(
-        select(Subscription, Member)
+        select(Subscription, Member, SubscriptionPlan.duration_months)
         .join(Member, Member.id == Subscription.member_id)
+        .join(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
         .where(
             Subscription.is_unlimited.is_(False),
             Subscription.payment_status == "PAID",
@@ -92,7 +93,9 @@ def generate(db: Session, ctx: AuthContext, clock: Clock, ip: str | None) -> Gen
     ).all()
     created: list[tuple[Reminder, str]] = []
     skipped = 0
-    for sub, member in candidates:
+    for sub, member, duration in candidates:
+        if duration is None:
+            continue
         if not is_eligible(
             is_unlimited=sub.is_unlimited, payment_status=sub.payment_status,
             canceled=sub.canceled_at is not None, suspended=sub.suspended_at is not None,
@@ -111,7 +114,7 @@ def generate(db: Session, ctx: AuthContext, clock: Clock, ip: str | None) -> Gen
             rem = Reminder(
                 subscription_id=sub.id, member_id=member.id, offset_days=offset, due_date=today,
                 phone_e164=member.phone_e164,
-                message=message_text(offset, first_name_of(member.full_name), sub.expires_on),
+                message=message_text(offset, duration, sub.expires_on, today),
             )
             db.add(rem)
             db.flush()

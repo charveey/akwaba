@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.domain.reminders import (
-    OFFSETS, due_date, first_name_of, french_date, is_eligible, message_text, offsets_due_today, whatsapp_link,
+    OFFSETS, due_date, french_date, is_eligible, message_text, offsets_due_today, whatsapp_link,
 )
 
 EXP = date(2026, 2, 17)
@@ -49,26 +49,43 @@ def test_french_date():
     assert french_date(date(2026, 2, 17)) == "17 février 2026"
     assert french_date(date(2026, 8, 1)) == "1er août 2026"
     assert french_date(date(2026, 12, 25)) == "25 décembre 2026"
+    assert french_date(date(2026, 2, 17), with_year=False) == "17 février"
 
 
-def test_message_uses_expires_on_and_tone_by_offset():
-    assert message_text(-7, "Awa", EXP) == (
-        "Bonjour Awa, votre abonnement expire le 17 février 2026 (dans 7 jours). Pensez à le renouveler.")
-    assert "dans 1 jour)" in message_text(-1, "Awa", EXP)
-    assert "expire aujourd'hui, le 17 février 2026" in message_text(0, "Awa", EXP)
-    assert message_text(1, "Awa", EXP) == (
-        "Bonjour Awa, votre abonnement a expiré le 17 février 2026. Contactez-nous pour le renouveler.")
-    assert message_text(0, "", EXP).startswith("Bonjour, ")
+def test_before_expiry_message_matches_the_template():
+    assert message_text(-2, 1, EXP, date(2026, 2, 15)) == (
+        "Bonjour,\n\nVotre abonnement de 1 mois à Akwaba VPN expire dans 2 jours. "
+        "Souhaitez-vous reconduire l'abonnement ?\n\nMerci et excellente journée à vous.")
 
 
-def test_first_name():
-    assert first_name_of("  Awa  Koné ") == "Awa"
-    assert first_name_of("   ") == ""
+def test_singular_plural_and_day_zero():
+    assert "expire dans 1 jour. " in message_text(-1, 3, EXP, date(2026, 2, 16))
+    assert "expire dans 7 jours. " in message_text(-7, 12, EXP, date(2026, 2, 10))
+    assert "de 12 mois à Akwaba VPN" in message_text(-7, 12, EXP, date(2026, 2, 10))
+    assert "expire aujourd'hui. " in message_text(0, 1, EXP, date(2026, 2, 17))
+
+
+def test_after_expiry_message_matches_the_template_and_omits_current_year():
+    assert message_text(1, 3, EXP, date(2026, 2, 18)) == (
+        "Bonjour,\n\nVotre abonnement de 3 mois à Akwaba VPN a expiré depuis le 17 février. "
+        "Votre compte sera bientôt désactivé si vous ne reconduisez pas votre abonnement.\n\n"
+        "Merci et bonne journée à vous.")
+
+
+def test_after_expiry_message_keeps_the_year_when_it_differs():
+    text = message_text(1, 1, date(2025, 12, 30), date(2026, 1, 2))
+    assert "a expiré depuis le 30 décembre 2025." in text
+
+
+def test_message_requires_a_positive_duration():
+    for bad in (None, 0, -1):
+        with pytest.raises(ValueError):
+            message_text(-7, bad, EXP, date(2026, 2, 10))
 
 
 def test_whatsapp_link_has_no_plus_and_encodes_text():
-    url = whatsapp_link("+2250102030405", "Bonjour Awa, ça va ? 100% & plus")
+    url = whatsapp_link("+2250102030405", "Bonjour,\n\nça va ? 100% & plus")
     parsed = urlparse(url)
     assert (parsed.scheme, parsed.netloc, parsed.path) == ("https", "wa.me", "/2250102030405")
-    assert parse_qs(parsed.query)["text"] == ["Bonjour Awa, ça va ? 100% & plus"]
-    assert "+" not in parsed.path and " " not in url
+    assert parse_qs(parsed.query)["text"] == ["Bonjour,\n\nça va ? 100% & plus"]
+    assert "+" not in parsed.path and " " not in url and "\n" not in url

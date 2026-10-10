@@ -8,9 +8,10 @@ _MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
            "août", "septembre", "octobre", "novembre", "décembre")
 
 
-def french_date(d: date) -> str:
+def french_date(d: date, *, with_year: bool = True) -> str:
     day = "1er" if d.day == 1 else str(d.day)
-    return f"{day} {_MONTHS[d.month - 1]} {d.year}"
+    text = f"{day} {_MONTHS[d.month - 1]}"
+    return f"{text} {d.year}" if with_year else text
 
 
 def due_date(expires_on: date, offset_days: int) -> date:
@@ -31,22 +32,29 @@ def is_eligible(
     )
 
 
-def message_text(offset_days: int, first_name: str, expires_on: date) -> str:
-    when = french_date(expires_on)
-    hello = f"Bonjour {first_name}," if first_name else "Bonjour,"
-    if offset_days < 0:
-        days = -offset_days
-        unit = "jour" if days == 1 else "jours"
-        return f"{hello} votre abonnement expire le {when} (dans {days} {unit}). Pensez à le renouveler."
-    if offset_days == 0:
-        return f"{hello} votre abonnement expire aujourd'hui, le {when}. Pensez à le renouveler."
-    return f"{hello} votre abonnement a expiré le {when}. Contactez-nous pour le renouveler."
+def message_text(offset_days: int, duration_months: int, expires_on: date, today: date) -> str:
+    """Deux familles de message : avant l'expiration (J-7 à J0) et après (J+1)."""
+    if duration_months is None or duration_months <= 0:
+        raise ValueError("duration_months doit être > 0 (les plans illimités ne sont pas relancés)")
+    plan = f"{duration_months} mois"
+    if offset_days <= 0:
+        if offset_days == 0:
+            when = "aujourd'hui"
+        else:
+            days = -offset_days
+            when = f"dans {days} {'jour' if days == 1 else 'jours'}"
+        return (
+            f"Bonjour,\n\nVotre abonnement de {plan} à Akwaba VPN expire {when}. "
+            "Souhaitez-vous reconduire l'abonnement ?\n\n"
+            "Merci et excellente journée à vous."
+        )
+    since = french_date(expires_on, with_year=expires_on.year != today.year)
+    return (
+        f"Bonjour,\n\nVotre abonnement de {plan} à Akwaba VPN a expiré depuis le {since}. "
+        "Votre compte sera bientôt désactivé si vous ne reconduisez pas votre abonnement.\n\n"
+        "Merci et bonne journée à vous."
+    )
 
 
 def whatsapp_link(phone_e164: str, text: str) -> str:
     return f"https://wa.me/{phone_e164.lstrip('+')}?text={quote(text, safe='')}"
-
-
-def first_name_of(full_name: str) -> str:
-    parts = full_name.strip().split()
-    return parts[0] if parts else ""
