@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import auth, billing, finance, health, members, reports
+from app.api import auth, billing, finance, health, members, reminders, reports
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.db.session import dispose_engine
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(finance.expenses_router, prefix="/api")
     app.include_router(reports.reports_router, prefix="/api")
     app.include_router(reports.audit_router, prefix="/api")
+    app.include_router(reminders.router, prefix="/api")
     return app
 
 

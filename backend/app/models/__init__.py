@@ -9,12 +9,13 @@ from app.models.infra import (
     ExitNodeIdentity, ExitNodeObservation, ExitNodePeer, ExitNodeSession,
     ProtectedIdentity, QuarantineRecord, TailnetDevice, TailnetMember,
 )
+from app.models.reminders import Reminder
 from app.models.system import JobRun, Setting
 
 __all__ = [
     "AdminSession", "AdminUser", "AgentBatch", "AgentCredential", "AgentHeartbeat", "AuditLog",
     "ClientIdentity", "EnforcementDecision", "ExitNode", "ExitNodeIdentity", "ExitNodeObservation",
     "ExitNodePeer", "ExitNodeSession", "Expense", "ExpenseCategory", "JobRun", "Member", "Payment",
-    "PaymentMethod", "ProtectedIdentity", "QuarantineRecord", "Setting", "Subscription",
+    "PaymentMethod", "ProtectedIdentity", "QuarantineRecord", "Reminder", "Setting", "Subscription",
     "SubscriptionPlan", "TailnetDevice", "TailnetMember",
 ]
