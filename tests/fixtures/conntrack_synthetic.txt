@@ -1,0 +1,11 @@
+tcp      6 431997 ESTABLISHED src=100.76.142.103 dst=203.0.113.10 sport=51000 dport=443 src=203.0.113.10 dst=192.168.1.99 sport=443 dport=51000 [ASSURED] mark=0 use=1
+tcp      6 429000 ESTABLISHED src=100.76.142.103 dst=203.0.113.11 sport=51001 dport=443 src=203.0.113.11 dst=192.168.1.99 sport=443 dport=51001 [ASSURED] mark=0 use=1
+tcp      6 118 SYN_SENT src=100.76.142.103 dst=203.0.113.12 sport=51002 dport=443 [UNREPLIED] src=203.0.113.12 dst=192.168.1.99 sport=443 dport=51002 mark=0 use=1
+udp      17 100 src=100.76.142.103 dst=203.0.113.13 sport=40000 dport=443 src=203.0.113.13 dst=192.168.1.99 sport=443 dport=40000 [ASSURED] mark=0 use=1
+udp      17 5 src=100.76.142.103 dst=203.0.113.14 sport=40001 dport=53 [UNREPLIED] src=203.0.113.14 dst=192.168.1.99 sport=53 dport=40001 mark=0 use=1
+tcp      6 431990 ESTABLISHED src=fd7a:115c:a1e0::1234:5678 dst=2001:db8::10 sport=52000 dport=443 src=2001:db8::10 dst=fd7a:115c:a1e0::1234:5678 sport=443 dport=52000 [ASSURED] mark=0 use=1
+tcp      6 431999 ESTABLISHED src=100.76.142.103 dst=100.126.200.88 sport=53000 dport=8080 src=100.126.200.88 dst=100.76.142.103 sport=8080 dport=53000 [ASSURED] mark=0 use=1
+tcp      6 431999 ESTABLISHED src=100.76.142.103 dst=192.168.1.6 sport=53001 dport=53 src=192.168.1.6 dst=100.76.142.103 sport=53 dport=53001 [ASSURED] mark=0 use=1
+tcp      6 431999 ESTABLISHED src=192.168.1.99 dst=203.0.113.15 sport=53002 dport=443 src=203.0.113.15 dst=192.168.1.99 sport=443 dport=53002 [ASSURED] mark=0 use=1
+icmp     1 25 src=100.76.142.103 dst=203.0.113.16 type=8 code=0 id=1 src=203.0.113.16 dst=192.168.1.99 type=0 code=0 id=1 mark=0 use=1
+ceci n'est pas une ligne conntrack
