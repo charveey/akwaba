@@ -92,3 +92,32 @@ def test_each_ip_is_cached_independently():
     resolver.resolve("100.1.1.1")
     resolver.resolve("100.1.1.2")
     assert calls == ["100.1.1.1", "100.1.1.2"]
+
+
+def test_malformed_sharee_flag_is_unresolved_technical_not_a_client():
+    for flag in ('"false"', "1", "0", "null"):
+        body = ('{"Node": {"Hostinfo": {"ShareeNode": %s}}, "UserProfile": {"LoginName": "a@b.test"}}' % flag).encode()
+        r = parse_whois(body)
+        assert r.status == "UNRESOLVED" and r.identity is None and r.technical_error, flag
+
+
+def test_wrong_structure_never_raises():
+    for body in (b'{"Node": "x"}', b'{"UserProfile": []}', b'{"Node": {"Hostinfo": 3}, "UserProfile": {"LoginName": "a@b.test"}}'):
+        r = parse_whois(body)
+        assert r.status == "UNRESOLVED" and r.technical_error
+
+
+def test_no_stale_identity_after_a_technical_error():
+    clock, answers = Clock(), [(200, SHAREE), (500, b"")]
+    resolver = WhoisResolver(lambda ip: answers.pop(0), clock)
+    assert resolver.resolve("100.1.1.1").status == "RESOLVED"
+    clock.t = 301                                   # cache expiré, la LocalAPI tombe en panne
+    r = resolver.resolve("100.1.1.1")
+    assert r.status == "UNRESOLVED" and r.identity is None and not resolver.whois_ok
+
+
+def test_resolver_module_has_no_logging():
+    import inspect
+    from akwaba_agent.resolver import whois
+    src = inspect.getsource(whois)
+    assert "logging" not in src and "print(" not in src

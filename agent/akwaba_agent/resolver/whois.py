@@ -51,24 +51,40 @@ def fetch_whois(ip: str, socket_path: str = SOCKET_PATH, timeout: float = 3.0) -
         conn.close()
 
 
+def _as_dict(value):
+    return value if isinstance(value, dict) else None
+
+
 def parse_whois(body: bytes) -> WhoisResult:
     try:
         data = json.loads(body.decode("utf-8"))
-        node = data.get("Node") or {}
-        profile = data.get("UserProfile") or {}
-    except (ValueError, AttributeError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError):
         return WhoisResult("UNRESOLVED", technical_error=True)
+    data = _as_dict(data)
+    if data is None:
+        return WhoisResult("UNRESOLVED", technical_error=True)
+    node, profile = data.get("Node"), data.get("UserProfile")
+    if (node is not None and _as_dict(node) is None) or (profile is not None and _as_dict(profile) is None):
+        return WhoisResult("UNRESOLVED", technical_error=True)   # structure inattendue
+    node, profile = node or {}, profile or {}
     login = profile.get("LoginName")
     if not isinstance(login, str) or not login.strip():
         return WhoisResult("UNRESOLVED")
-    hostinfo = node.get("Hostinfo") or {}
+    hostinfo = node.get("Hostinfo")
+    if hostinfo is not None and _as_dict(hostinfo) is None:
+        return WhoisResult("UNRESOLVED", technical_error=True)
+    hostinfo = hostinfo or {}
+    sharee = hostinfo.get("ShareeNode", False)
+    if not isinstance(sharee, bool):                              # valeur malformée : jamais un « client » par défaut
+        return WhoisResult("UNRESOLVED", technical_error=True)
+    uid = profile.get("ID")
     return WhoisResult("RESOLVED", Identity(
         login_name=login.strip().lower(),
         display_name=profile.get("DisplayName") or None,
-        tailscale_user_id=profile.get("ID") if isinstance(profile.get("ID"), int) else None,
+        tailscale_user_id=uid if isinstance(uid, int) and not isinstance(uid, bool) else None,
         stable_id=node.get("StableID") or None,
         hostname=hostinfo.get("Hostname") or None,
-        is_sharee=bool(hostinfo.get("ShareeNode", False)),
+        is_sharee=sharee,
     ))
 
 
