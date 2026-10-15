@@ -47,6 +47,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--spool", help="chemin du spool SQLite (obligatoire hors --once)")
     ap.add_argument("--once", action="store_true", help="un seul cycle")
     ap.add_argument("--cycles", type=int, default=0, help="nombre de cycles (0 = sans fin)")
+    ap.add_argument("--quiet", action="store_true", help="n'affiche pas le tableau à chaque cycle")
     args = ap.parse_args(argv)
 
     if args.window <= 0 or args.interval <= 0 or args.interval > args.window:
@@ -76,7 +77,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         sampler, spool, args.interval,
         sleep=stop.wait, should_stop=stop.is_set,
         max_cycles=1 if args.once else (args.cycles or None),
-        on_cycle=_report,
+        on_cycle=None if args.quiet else _report,
     )
     print("cycles=%d lots_ecrits=%d erreurs=%d%s" % (
         stats.cycles, stats.enqueued, stats.errors,

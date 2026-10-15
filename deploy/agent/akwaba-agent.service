@@ -1,0 +1,29 @@
+[Unit]
+Description=Akwaba VPN - agent d'observation (lecture seule, aucun blocage)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=akwaba-agent
+Group=akwaba-agent
+WorkingDirectory=/opt/akwaba-agent
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m akwaba_agent --sudo --quiet --exclude-source 100.85.214.5 --spool /var/lib/akwaba-agent/agent.db
+StateDirectory=akwaba-agent
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+MemoryMax=96M
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
