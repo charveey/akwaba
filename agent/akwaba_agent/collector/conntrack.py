@@ -9,6 +9,17 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence
+import hashlib
+import os
+
+_KEY_SALT = os.urandom(16)  # propre au processus, jamais écrit sur disque
+
+
+def _flow_key(proto: str, src: str, dst: str, sport, dport, ident) -> str:
+    """Empreinte opaque (8 octets, salée) : sert uniquement à détecter un flux déjà vu."""
+    raw = "|".join((proto, src, dst, sport or "", dport or "", ident or "")).encode("ascii", "ignore")
+    return hashlib.blake2b(raw, key=_KEY_SALT, digest_size=8).hexdigest()
+
 
 TAILSCALE_NETS = (
     ipaddress.ip_network("100.64.0.0/10"),
@@ -48,6 +59,7 @@ class Flow:
     egress: bool         # la destination est hors Tailscale et hors réseaux locaux
     replied: bool
     assured: bool
+    key: str            # empreinte opaque du flux (aucune destination ni port récupérable)
 
 
 @dataclass
@@ -70,18 +82,24 @@ def parse_line(line: str) -> Optional[Flow]:
         return None
     if timeout < 0:
         return None
-    src = dst = state = None
+    src = dst = state = sport = dport = ident = None
     flags = set()
     for tok in tokens[3:]:
         if tok.startswith("["):
             flags.add(tok.strip("[]"))
         elif "=" in tok:
-            key, _, value = tok.partition("=")
-            # Première occurrence = tuple original. Les ports ne sont même pas lus.
-            if key == "src" and src is None:
+            name, _, value = tok.partition("=")
+            # Première occurrence = tuple original. Destination et ports ne servent qu'à l'empreinte.
+            if name == "src" and src is None:
                 src = value
-            elif key == "dst" and dst is None:
+            elif name == "dst" and dst is None:
                 dst = value
+            elif name == "sport" and sport is None:
+                sport = value
+            elif name == "dport" and dport is None:
+                dport = value
+            elif name == "id" and ident is None:
+                ident = value
         elif state is None and src is None:
             state = tok
     if src is None or dst is None:
@@ -91,8 +109,9 @@ def parse_line(line: str) -> Optional[Flow]:
         dst_ip = ipaddress.ip_address(dst)
     except ValueError:
         return None
+    proto = tokens[0].lower()
     return Flow(
-        proto=tokens[0].lower(),
+        proto=proto,
         state=state.upper() if state else None,
         timeout_remaining=timeout,
         src=str(src_ip),
@@ -100,8 +119,8 @@ def parse_line(line: str) -> Optional[Flow]:
         egress=is_external_destination(dst_ip),
         replied="UNREPLIED" not in flags,
         assured="ASSURED" in flags,
+        key=_flow_key(proto, str(src_ip), str(dst_ip), sport, dport, ident),
     )
-
 
 def parse_output(text: str) -> ParseResult:
     flows: List[Flow] = []
