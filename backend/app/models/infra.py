@@ -148,9 +148,14 @@ class ExitNodeObservation(Base):
     window_seconds: Mapped[int]
     resolution_status: Mapped[str] = mapped_column(String(12))
     active_flows: Mapped[int]
-    new_flows: Mapped[int]
+    # NULL = inconnu (premier échantillon après démarrage ou panne conntrack) : jamais un 0 inventé.
+    new_flows: Mapped[int | None]
     replied_flows: Mapped[int]
-    # NULL = volume indisponible (jamais 0 artificiel).
+    total_flows: Mapped[int] = mapped_column(server_default=text("0"))
+    unknown_age_flows: Mapped[int] = mapped_column(server_default=text("0"))
+    consecutive_active_windows: Mapped[int] = mapped_column(server_default=text("0"))
+    active_confirmed: Mapped[bool] = mapped_column(server_default=text("false"))
+    identity_technical_error: Mapped[bool] = mapped_column(server_default=text("false"))
     bytes_in: Mapped[int | None] = mapped_column(BigInteger)
     bytes_out: Mapped[int | None] = mapped_column(BigInteger)
 
