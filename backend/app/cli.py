@@ -1,7 +1,9 @@
-"""Administration en ligne de commande. Le mot de passe est saisi en mode masqué.
+"""Administration en ligne de commande. Les mots de passe sont saisis en mode masqué.
 
     python -m app.cli create-admin --email x@y.z [--name "Nom"]
     python -m app.cli set-password --email x@y.z
+    python -m app.cli create-agent --name stray --ip 100.85.214.5 [--rotate]
+    python -m app.cli revoke-agent --key-id agt_xxxxxxxxxxxxxxxx
 """
 import argparse
 import getpass
@@ -14,6 +16,7 @@ from sqlalchemy import select, update
 from app.core.security import hash_password
 from app.db.session import get_sessionmaker
 from app.models.admin import AdminSession, AdminUser
+from app.services import agent_admin
 from app.services.auth import audit
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -69,6 +72,28 @@ def set_password(email: str) -> None:
     print("Mot de passe modifié. Toutes les sessions ont été révoquées.")
 
 
+def create_agent(name: str, ip: str, rotate: bool) -> None:
+    with get_sessionmaker()() as db:
+        try:
+            key_id, secret = agent_admin.create_agent(
+                db, name=name, ip=ip, rotate=rotate, now=datetime.now(timezone.utc))
+        except agent_admin.AgentAdminError as exc:
+            sys.exit(f"Refusé : {exc}.")
+    # stdout : le secret seul (à envoyer directement dans un fichier 0600). stderr : le reste.
+    print(f"key_id = {key_id}", file=sys.stderr)
+    print("Le secret est affiché UNE SEULE FOIS, sur la sortie standard.", file=sys.stderr)
+    print(secret)
+
+
+def revoke_agent(key_id: str) -> None:
+    with get_sessionmaker()() as db:
+        try:
+            agent_admin.revoke_agent(db, key_id.strip(), now=datetime.now(timezone.utc))
+        except agent_admin.AgentAdminError as exc:
+            sys.exit(f"Refusé : {exc}.")
+    print("Identifiant révoqué.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -77,11 +102,21 @@ def main() -> None:
     p1.add_argument("--name")
     p2 = sub.add_parser("set-password")
     p2.add_argument("--email", required=True)
+    p3 = sub.add_parser("create-agent")
+    p3.add_argument("--name", required=True)
+    p3.add_argument("--ip", required=True)
+    p3.add_argument("--rotate", action="store_true")
+    p4 = sub.add_parser("revoke-agent")
+    p4.add_argument("--key-id", required=True)
     args = parser.parse_args()
     if args.cmd == "create-admin":
         create_admin(args.email, args.name)
-    else:
+    elif args.cmd == "set-password":
         set_password(args.email)
+    elif args.cmd == "create-agent":
+        create_agent(args.name, args.ip, args.rotate)
+    else:
+        revoke_agent(args.key_id)
 
 
 if __name__ == "__main__":

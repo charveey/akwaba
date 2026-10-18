@@ -34,3 +34,4 @@ tests/fixtures/raw/
 .idea/
 .vscode/
 .DS_Store
+.zed/settings.json
