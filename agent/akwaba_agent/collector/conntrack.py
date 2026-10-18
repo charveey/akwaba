@@ -36,6 +36,10 @@ _NOT_EXTERNAL = TAILSCALE_NETS + tuple(ipaddress.ip_network(n) for n in (
 class CollectorError(Exception):
     """conntrack illisible : l'appelant doit signaler conntrack_ok=false, sans observation."""
 
+    def __init__(self, message: str, category: str = "other") -> None:
+        super().__init__(message)
+        self.category = category
+
 
 def _in(ip, nets) -> bool:
     return any(ip in net for net in nets)
@@ -135,7 +139,7 @@ def parse_output(text: str) -> ParseResult:
         else:
             flows.append(flow)
     if lines and not flows:
-        raise CollectorError("format inattendu : aucune ligne conntrack reconnue")
+        raise CollectorError("format inattendu : aucune ligne conntrack reconnue", "format")
     return ParseResult(flows=flows, lines=lines, unparsed=unparsed)
 
 
@@ -144,13 +148,19 @@ def _run(cmd: Sequence[str], run: Callable, timeout: int) -> str:
         proc = run(list(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                    universal_newlines=True, timeout=timeout)
     except FileNotFoundError:
-        raise CollectorError("commande introuvable : %s" % cmd[0])
+        raise CollectorError("commande introuvable : %s" % cmd[0], "not_found")
     except subprocess.TimeoutExpired:
-        raise CollectorError("délai dépassé (%d s)" % timeout)
+        raise CollectorError("délai dépassé (%d s)" % timeout, "timeout")
     except OSError as exc:
-        raise CollectorError("exécution impossible : %s" % exc)
+        raise CollectorError("exécution impossible : %s" % exc, "exec")
     if proc.returncode != 0:
-        raise CollectorError("conntrack a échoué (code %d) : %s" % (proc.returncode, (proc.stderr or "")[:200].strip()))
+        err = (proc.stderr or "")[:200].strip()
+        low = err.lower()
+        if "effective uid is not 0" in low or "password is required" in low or "not allowed" in low:
+            category = "sudo_denied"
+        else:
+            category = "exit_code"
+        raise CollectorError("conntrack a échoué (code %d) : %s" % (proc.returncode, err), category)
     return proc.stdout
 
 

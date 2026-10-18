@@ -32,6 +32,9 @@ visudo -cf "$TMP" >/dev/null || { echo "règle sudoers invalide, abandon"; rm -f
 install -m 0440 -o root -g root "$TMP" /etc/sudoers.d/akwaba-agent
 rm -f "$TMP"
 
+install -d -m 0755 -o root -g root /etc/akwaba-agent
+[ -f /etc/akwaba-agent/agent.ini ] || install -m 0644 -o root -g root "$HERE/agent.ini" /etc/akwaba-agent/agent.ini
+
 install -m 0644 -o root -g root "$HERE/akwaba-agent.service" /etc/systemd/system/akwaba-agent.service
 systemctl daemon-reload
 

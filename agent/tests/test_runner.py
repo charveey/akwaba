@@ -1,6 +1,6 @@
 import json
 
-from akwaba_agent.runner import run_loop
+from akwaba_agent.runner import LoopStats, run_loop
 from akwaba_agent.sampler import Health, SampleResult
 from akwaba_agent.spool.store import Spool
 
@@ -47,3 +47,17 @@ def test_stop_flag_ends_the_loop_and_no_spool_is_allowed():
 def test_error_message_is_never_kept():
     stats = run_loop(Fake([ValueError("login=a@b.test")]), None, 1, sleep=lambda s: None, max_cycles=1)
     assert stats.last_error == "ValueError" and "a@b.test" not in repr(stats)
+
+
+def test_on_cycle_gets_none_after_a_sampling_error_and_its_own_errors_are_contained():
+    seen = []
+
+    def on_cycle(res, spool):
+        seen.append(res)
+        raise RuntimeError("heartbeat")
+
+    stats = LoopStats()
+    run_loop(Fake([RuntimeError("x"), ok(1)]), None, 1, sleep=lambda s: None, max_cycles=2,
+             on_cycle=on_cycle, stats=stats)
+    assert seen[0] is None and seen[1] is not None
+    assert (stats.cycles, stats.errors) == (2, 3) and stats.last_cycle_at is not None

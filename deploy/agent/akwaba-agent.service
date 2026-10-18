@@ -9,7 +9,7 @@ User=akwaba-agent
 Group=akwaba-agent
 WorkingDirectory=/opt/akwaba-agent
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m akwaba_agent --sudo --quiet --exclude-source 100.85.214.5 --spool /var/lib/akwaba-agent/agent.db
+ExecStart=/usr/bin/python3 -m akwaba_agent --config /etc/akwaba-agent/agent.ini
 StateDirectory=akwaba-agent
 StateDirectoryMode=0700
 UMask=0077
@@ -21,9 +21,8 @@ ProtectSystem=full
 ProtectHome=yes
 PrivateTmp=yes
 ProtectControlGroups=yes
-ProtectKernelModules=yes
-RestrictRealtime=yes
-LockPersonality=yes
+# Volontairement absents : ProtectKernelModules, RestrictRealtime, LockPersonality (et NoNewPrivileges).
+# Mesuré sur ce Pi : chacun empêche sudo d'obtenir uid 0, donc conntrack échoue.
 
 [Install]
 WantedBy=multi-user.target

@@ -22,6 +22,7 @@ class Health:
     unparsed: int = 0
     timeouts_loaded: int = 0
     warnings: List[str] = field(default_factory=list)
+    conntrack_error: Optional[str] = None   # catégorie seulement, jamais de texte
 
 
 @dataclass
@@ -68,6 +69,7 @@ class Sampler:
         except CollectorError as exc:
             self._reset()                       # aucune observation, aucune série, aucun « nouveau »
             health.warnings.append("conntrack : %s" % exc)
+            health.conntrack_error = exc.category
             return SampleResult(health, None, 0)
         health.conntrack_ok = True
         health.lines, health.unparsed = parsed.lines, parsed.unparsed

@@ -14,6 +14,7 @@ class LoopStats:
     enqueued: int = 0
     errors: int = 0
     last_error: Optional[str] = None     # nom de classe seulement, jamais le message
+    last_cycle_at: Optional[float] = None
 
 
 def run_loop(
@@ -26,21 +27,28 @@ def run_loop(
     should_stop: Callable[[], bool] = lambda: False,
     max_cycles: Optional[int] = None,
     on_cycle: Optional[Callable] = None,
+    stats: Optional[LoopStats] = None,
 ) -> LoopStats:
-    stats = LoopStats()
+    stats = stats if stats is not None else LoopStats()
     while not should_stop():
         started, now_wall = mono(), wall()
+        res = None
         try:
             res = sampler.sample(datetime.fromtimestamp(now_wall, timezone.utc))
             if spool is not None and res.payload is not None and res.observations > 0:
                 spool.enqueue(json.dumps(res.payload, separators=(",", ":"), sort_keys=True), now_wall)
                 stats.enqueued += 1
-            if on_cycle is not None:
-                on_cycle(res, spool)
         except Exception as exc:  # noqa: BLE001 : la boucle ne doit jamais mourir
             stats.errors += 1
             stats.last_error = type(exc).__name__
         stats.cycles += 1
+        stats.last_cycle_at = now_wall
+        if on_cycle is not None:
+            try:
+                on_cycle(res, spool)      # res vaut None si l'échantillonnage a échoué
+            except Exception as exc:  # noqa: BLE001
+                stats.errors += 1
+                stats.last_error = type(exc).__name__
         if max_cycles is not None and stats.cycles >= max_cycles:
             break
         sleep(max(0.0, interval - (mono() - started)))
