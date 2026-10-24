@@ -43,8 +43,8 @@ services:
     networks:
       - internal
     ports:
-      # PHASE 1 UNIQUEMENT (test local, loopback). À retirer avec la mise en place de web.
       - "127.0.0.1:8000:8000"
+      - "${TAILNET_BIND_IP}:8000:8000"   # PROVISOIRE (phase 8c) : agent -> backend. À retirer avec l'arrivée de web.
     mem_limit: 256m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]

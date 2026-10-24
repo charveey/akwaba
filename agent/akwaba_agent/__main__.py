@@ -1,7 +1,8 @@
-"""Agent d'observation. Aucun envoi réseau à ce stade.
+"""Agent d'observation.
 
     python3 -m akwaba_agent --once --sudo                          # un cycle, affichage seul
     python3 -m akwaba_agent --config /etc/akwaba-agent/agent.ini   # service
+    python3 -m akwaba_agent --config ... --ping                    # un ping signé vers le backend
 """
 from __future__ import annotations
 
@@ -18,11 +19,15 @@ from akwaba_agent.aggregator.activity import ActivityTracker
 from akwaba_agent.collector.conntrack import read_conntrack
 from akwaba_agent.collector.timeouts import load_timeouts
 from akwaba_agent.config import Config, ConfigError, load_config
-from akwaba_agent.heartbeat import TransitionLogger, build_heartbeat, read_conntrack_load, write_atomic
+from akwaba_agent.heartbeat import (
+    TransitionLogger, build_heartbeat, read_conntrack_acct, read_conntrack_load, write_atomic,
+)
 from akwaba_agent.peers.status import StatusReader
+from akwaba_agent.protocol import SecretError, load_secret
 from akwaba_agent.resolver.whois import WhoisResolver
 from akwaba_agent.runner import LoopStats, run_loop
 from akwaba_agent.sampler import Sampler
+from akwaba_agent.sender.client import HttpTransport, Sender
 from akwaba_agent.spool.store import Spool
 
 
@@ -47,6 +52,25 @@ def _report(res, spool) -> None:
                 " (partage)" if o["identity"] and o["identity"]["is_sharee"] else ""))
 
 
+def _build_sender(args, cfg: Config):
+    """(Sender ou None, message d'erreur ou None)."""
+    url = args.backend_url or cfg.backend_url
+    agent_id = args.agent_id or cfg.agent_id
+    secret_path = args.secret_file or cfg.secret_path
+    if not (url or agent_id or secret_path or args.ping):
+        return None, None
+    if not (url and agent_id and secret_path):
+        return None, "envoi : backend_url, agent_id et secret_path sont tous requis"
+    try:
+        secret = load_secret(secret_path)
+        transport = HttpTransport(url, cfg.request_timeout_seconds)
+    except SecretError as exc:
+        return None, "secret invalide : %s" % exc
+    except ValueError:
+        return None, "backend_url invalide"
+    return Sender(transport, agent_id, secret), None
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="python3 -m akwaba_agent")
     ap.add_argument("--config", help="fichier INI (sinon valeurs par défaut)")
@@ -58,6 +82,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--timeouts-dir")
     ap.add_argument("--spool", help="chemin du spool SQLite")
     ap.add_argument("--heartbeat", help="chemin du fichier heartbeat")
+    ap.add_argument("--backend-url")
+    ap.add_argument("--agent-id")
+    ap.add_argument("--secret-file")
+    ap.add_argument("--ping", action="store_true", help="un ping signé vers le backend, puis arrêt")
     ap.add_argument("--once", action="store_true", help="un seul cycle, sans spool sauf --spool")
     ap.add_argument("--cycles", type=int, default=0, help="nombre de cycles (0 = sans fin)")
     args = ap.parse_args(argv)
@@ -67,6 +95,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ConfigError as exc:
         print("configuration invalide : %s" % exc)
         return 2
+
+    sender, error = _build_sender(args, cfg)
+    if error:
+        print(error)
+        return 2
+    if args.ping:
+        r = sender.ping()
+        if r["ok"]:
+            print("ping=ok noeud=%s ecart_horloge=%ss" % (r["exit_node"], r["clock_skew_seconds"]))
+            return 0
+        print("ping=echec categorie=%s ecart_horloge=%s" % (r["category"], r["clock_skew_seconds"]))
+        return 1
 
     window = args.window if args.window is not None else cfg.window_seconds
     interval = args.interval if args.interval is not None else cfg.interval_seconds
@@ -113,10 +153,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     logger = TransitionLogger()
 
     def on_cycle(res, spool_) -> None:
-        hb = build_heartbeat(time.time(), res, stats, spool_, read_conntrack_load(netfilter_dir),
-                             cfg.saturation_threshold, __version__)
+        if sender is not None and spool_ is not None:
+            sender.flush(spool_)          # le lot de ce cycle vient d'être écrit : il part tout de suite
+        hb = build_heartbeat(
+            time.time(), res, stats, spool_, read_conntrack_load(netfilter_dir), cfg.saturation_threshold,
+            __version__, sender.stats() if sender is not None else None, read_conntrack_acct(netfilter_dir))
         if heartbeat_path:
             write_atomic(heartbeat_path, hb)
+        if sender is not None:
+            sender.send_heartbeat(hb)
         for line in logger.changes(hb):
             print(line)
         if not quiet:
@@ -132,8 +177,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         max_cycles=1 if args.once else (args.cycles or None),
         on_cycle=on_cycle, stats=stats,
     )
-    print("cycles=%d lots_ecrits=%d erreurs=%d%s" % (
-        stats.cycles, stats.enqueued, stats.errors,
+    tail = "" if sender is None else " envoyes=%d refuses=%d" % (sender.sent_batches, sender.rejected_batches)
+    print("cycles=%d lots_ecrits=%d erreurs=%d%s%s" % (
+        stats.cycles, stats.enqueued, stats.errors, tail,
         "" if not stats.last_error else " derniere_erreur=%s" % stats.last_error))
     return 0
 

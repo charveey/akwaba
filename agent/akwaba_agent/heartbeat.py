@@ -10,6 +10,13 @@ from akwaba_agent.collector.timeouts import DEFAULT_DIR
 
 SCHEMA_VERSION = 1
 
+DETAIL_KEYS = (
+    "lines", "unparsed", "timeouts_loaded", "observations", "conntrack_saturation", "conntrack_saturated",
+    "spool_oldest_age_seconds", "dropped_batches", "spool_recovered_corruption", "cycles", "loop_errors",
+    "cycle_failed", "sent_batches", "rejected_batches", "send_failures", "last_send_error",
+    "clock_skew_seconds", "backend_reachable",
+)
+
 
 def read_conntrack_load(base: str = DEFAULT_DIR) -> Optional[Tuple[int, int]]:
     """(entrées actuelles, maximum) de la table conntrack, ou None si illisible."""
@@ -25,6 +32,15 @@ def read_conntrack_load(base: str = DEFAULT_DIR) -> Optional[Tuple[int, int]]:
     return count, maximum
 
 
+def read_conntrack_acct(base: str = DEFAULT_DIR) -> bool:
+    """True si conntrack comptabilise les octets (nf_conntrack_acct != 0). Faux en cas de doute."""
+    try:
+        with open(os.path.join(base, "nf_conntrack_acct")) as fh:
+            return int(fh.read().strip()) != 0
+    except (OSError, ValueError):
+        return False
+
+
 def _iso(ts: Optional[float]) -> Optional[str]:
     if ts is None:
         return None
@@ -32,7 +48,8 @@ def _iso(ts: Optional[float]) -> Optional[str]:
 
 
 def build_heartbeat(now: float, res, stats, spool, load: Optional[Tuple[int, int]],
-                    saturation_threshold: float, version: str) -> Dict:
+                    saturation_threshold: float, version: str,
+                    sender_stats: Optional[Dict] = None, bytes_available: bool = False) -> Dict:
     health = res.health if res is not None else None
     entries = maximum = saturation = None
     saturated = False
@@ -40,6 +57,7 @@ def build_heartbeat(now: float, res, stats, spool, load: Optional[Tuple[int, int
         entries, maximum = load
         saturation = round(entries / maximum, 3)
         saturated = saturation >= saturation_threshold
+    s = sender_stats or {}
     return {
         "schema": SCHEMA_VERSION,
         "generated_at": _iso(now),
@@ -49,6 +67,7 @@ def build_heartbeat(now: float, res, stats, spool, load: Optional[Tuple[int, int
         "conntrack_error": health.conntrack_error if health else None,
         "status_ok": bool(health.status_ok) if health else False,
         "whois_ok": bool(health.whois_ok) if health else False,
+        "bytes_available": bool(bytes_available),
         "lines": health.lines if health else 0,
         "unparsed": health.unparsed if health else 0,
         "timeouts_loaded": health.timeouts_loaded if health else 0,
@@ -65,6 +84,30 @@ def build_heartbeat(now: float, res, stats, spool, load: Optional[Tuple[int, int
         "loop_errors": stats.errors,
         "last_error": stats.last_error,
         "last_cycle_at": _iso(stats.last_cycle_at),
+        "sent_batches": s.get("sent_batches"),
+        "rejected_batches": s.get("rejected_batches"),
+        "send_failures": s.get("send_failures"),
+        "last_send_error": s.get("last_send_error"),
+        "clock_skew_seconds": s.get("clock_skew_seconds"),
+        "backend_reachable": s.get("backend_reachable"),
+    }
+
+
+def to_wire(hb: Dict) -> Dict:
+    """Le heartbeat tel qu'envoyé au backend : catégories et compteurs seulement."""
+    return {
+        "schema": SCHEMA_VERSION,
+        "agent_version": hb["agent_version"],
+        "generated_at": hb["generated_at"],
+        "conntrack_ok": hb["conntrack_ok"],
+        "status_ok": hb["status_ok"],
+        "whois_ok": hb["whois_ok"],
+        "bytes_available": bool(hb.get("bytes_available", False)),
+        "spool_depth": hb.get("spool_pending") or 0,
+        "conntrack_count": hb.get("conntrack_entries"),
+        "conntrack_max": hb.get("conntrack_max"),
+        "last_error": hb.get("conntrack_error") or hb.get("last_error"),
+        "details": {k: hb.get(k) for k in DETAIL_KEYS},
     }
 
 
@@ -82,14 +125,15 @@ def write_atomic(path: str, data: Dict) -> None:
 class TransitionLogger:
     """Ne produit une ligne que lorsque l'état change (journal minimal)."""
 
-    KEYS = ("conntrack_ok", "status_ok", "whois_ok", "conntrack_saturated")
+    KEYS = ("conntrack_ok", "status_ok", "whois_ok", "conntrack_saturated", "backend_reachable")
 
     def __init__(self) -> None:
         self._last: Optional[Dict] = None
         self._dropped = 0
+        self._rejected = 0
 
     def changes(self, hb: Dict) -> List[str]:
-        cur = {k: hb[k] for k in self.KEYS}
+        cur = {k: hb.get(k) for k in self.KEYS}
         lines: List[str] = []
         if self._last is None:
             lines.append("etat initial : " + " ".join("%s=%s" % (k, cur[k]) for k in self.KEYS))
@@ -98,5 +142,8 @@ class TransitionLogger:
                 "%s=%s" % (k, cur[k]) for k in self.KEYS if cur[k] != self._last[k]))
         if hb["dropped_batches"] > self._dropped:
             lines.append("lots supprimes (spool plein) : total=%d" % hb["dropped_batches"])
-        self._last, self._dropped = cur, hb["dropped_batches"]
+        rejected = hb.get("rejected_batches") or 0
+        if rejected > self._rejected:
+            lines.append("lots refuses par le backend : total=%d" % rejected)
+        self._last, self._dropped, self._rejected = cur, hb["dropped_batches"], rejected
         return lines
