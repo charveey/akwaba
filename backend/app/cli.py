@@ -18,6 +18,8 @@ from app.db.session import get_sessionmaker
 from app.models.admin import AdminSession, AdminUser
 from app.services import agent_admin
 from app.services.auth import audit
+from app.schemas.protected import ProtectedIn
+from app.services import protected as protected_svc
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_LENGTH = 12
@@ -94,6 +96,21 @@ def revoke_agent(key_id: str) -> None:
     print("Identifiant révoqué.")
 
 
+def protect_identity(login: str, reason: str | None) -> None:
+    from pydantic import ValidationError
+    try:
+        data = ProtectedIn(login_name=login, reason=reason)
+    except ValidationError:
+        sys.exit("Refusé : login invalide.")
+    from fastapi import HTTPException
+    with get_sessionmaker()() as db:
+        try:
+            out = protected_svc.add_protected(db, login=data.login_name, reason=data.reason, admin_id=None, label="cli")
+        except HTTPException as exc:
+            sys.exit(f"Refusé : {exc.detail}.")
+    print(f"Identité protégée : {out.login_name} (id {out.id})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -108,6 +125,9 @@ def main() -> None:
     p3.add_argument("--rotate", action="store_true")
     p4 = sub.add_parser("revoke-agent")
     p4.add_argument("--key-id", required=True)
+    p5 = sub.add_parser("protect-identity")
+    p5.add_argument("--login", required=True)
+    p5.add_argument("--reason")
     args = parser.parse_args()
     if args.cmd == "create-admin":
         create_admin(args.email, args.name)
@@ -115,6 +135,8 @@ def main() -> None:
         set_password(args.email)
     elif args.cmd == "create-agent":
         create_agent(args.name, args.ip, args.rotate)
+    elif args.cmd == "protect-identity":
+        protect_identity(args.login, args.reason)
     else:
         revoke_agent(args.key_id)
 
