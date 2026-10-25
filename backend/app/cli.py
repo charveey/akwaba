@@ -111,6 +111,21 @@ def protect_identity(login: str, reason: str | None) -> None:
     print(f"Identité protégée : {out.login_name} (id {out.id})")
 
 
+def show_identities() -> None:
+    from app.domain.clock import SystemClock
+    from app.services import identities as identities_svc
+
+    with get_sessionmaker()() as db:
+        page = identities_svc.evaluate_identities(
+            db, SystemClock(), verdict=None, active_now=None, q=None, limit=200, offset=0)
+    print(f"Évalué à {page.evaluated_at:%Y-%m-%d %H:%M:%S} UTC — actif = confirmé dans les {page.recency_seconds // 60} dernières minutes")
+    print(f"{'login':40} {'partage':7} {'actif':5} {'verdict':18} {'raison':24} membre")
+    for e in page.items:
+        print(f"{e.login_name[:40]:40} {'oui' if e.is_sharee else 'non':7} {'oui' if e.active_now else 'non':5} "
+              f"{e.verdict:18} {e.reason:24} {e.member.full_name if e.member else '-'}")
+    print(f"synthèse : {page.counts} | sources non résolues récentes : {page.unresolved_recent_sources}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -128,6 +143,7 @@ def main() -> None:
     p5 = sub.add_parser("protect-identity")
     p5.add_argument("--login", required=True)
     p5.add_argument("--reason")
+    sub.add_parser("show-identities")
     args = parser.parse_args()
     if args.cmd == "create-admin":
         create_admin(args.email, args.name)
@@ -137,6 +153,8 @@ def main() -> None:
         create_agent(args.name, args.ip, args.rotate)
     elif args.cmd == "protect-identity":
         protect_identity(args.login, args.reason)
+    elif args.cmd == "show-identities":
+        show_identities()
     else:
         revoke_agent(args.key_id)
 
