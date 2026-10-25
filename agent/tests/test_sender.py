@@ -201,7 +201,8 @@ def test_ping_reports_success_and_failures(tmp_path):
     r = s.ping()
     assert (r["ok"], r["exit_node"], r["server_time"], r["clock_skew_seconds"]) == (True, "stray", 1000, 1)
     s2, _ = make(Transport([Reply(401)]))
-    assert (s2.ping()["ok"], s2.ping()["category"]) == (False, "http_401")
+    r2 = s2.ping()
+    assert (r2["ok"], r2["category"]) == (False, "http_401")
 
 
 def test_stats_hold_only_counters_and_categories():
