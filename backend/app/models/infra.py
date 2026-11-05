@@ -296,3 +296,24 @@ class EnforcementDecision(Base):
     decided_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reason: Mapped[str | None] = mapped_column(String(255))
     context: Mapped[Any | None] = mapped_column(JSONB)
+
+
+class IdentityExemption(Base):
+    """Autorisation explicite d'un administrateur. Active tant que ended_at IS NULL ; jamais supprimée."""
+
+    __tablename__ = "identity_exemptions"
+    __table_args__ = (
+        CheckConstraint("ended_at IS NULL OR ended_at >= granted_at", name="ended_after_granted"),
+        Index(
+            "uq_identity_exemptions_active", "exit_node_identity_id",
+            unique=True, postgresql_where=text("ended_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(**_UUID_PK)
+    exit_node_identity_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("exit_node_identities.id", ondelete="RESTRICT"))
+    quarantine_record_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("quarantine_records.id", ondelete="RESTRICT"))
+    granted_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    granted_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="RESTRICT"))
+    ended_at: Mapped[datetime | None]
+    ended_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="RESTRICT"))

@@ -126,6 +126,25 @@ def show_identities() -> None:
     print(f"synthèse : {page.counts} | sources non résolues récentes : {page.unresolved_recent_sources}")
 
 
+def reconcile_once(plan: bool) -> None:
+    from app.domain.clock import SystemClock
+    from app.services import quarantine as quarantine_svc
+
+    report = quarantine_svc.run_job(get_sessionmaker(), SystemClock(), apply=not plan)
+    if report is None:
+        sys.exit("Un autre traitement est en cours.")
+    mode = "PLAN (rien n'est écrit)" if plan else "APPLIQUÉ (dry-run : aucune action réseau)"
+    print(f"{mode} — évaluées {report.evaluated}, ouvertes {report.opened}, changées {report.changed}, "
+          f"blocages simulés {report.blocked}, déblocages simulés {report.unblocked}, "
+          f"autorisées auto {report.authorized_auto}, différées (agent) {report.skipped_unhealthy}, "
+          f"erreurs {report.errors}")
+    if report.anomalies:
+        print(f"anomalies : {report.anomalies}")
+    for p in report.planned:
+        print(f"  {p.kind:6} {p.login_name[:40]:40} {p.from_status or '-':18} -> {p.to_status or '-':18} "
+              f"{p.decision or '-':14} {p.reason}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -145,6 +164,8 @@ def main() -> None:
     p5.add_argument("--reason")
     sub.add_parser("show-identities")
     args = parser.parse_args()
+    p6 = sub.add_parser("reconcile")
+    p6.add_argument("--plan", action="store_true", help="calcule sans rien écrire")
     if args.cmd == "create-admin":
         create_admin(args.email, args.name)
     elif args.cmd == "set-password":
@@ -155,6 +176,8 @@ def main() -> None:
         protect_identity(args.login, args.reason)
     elif args.cmd == "show-identities":
         show_identities()
+    elif args.cmd == "reconcile":
+        reconcile_once(args.plan)
     else:
         revoke_agent(args.key_id)
 

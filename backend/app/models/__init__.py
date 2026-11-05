@@ -7,7 +7,7 @@ from app.models.finance import Expense, ExpenseCategory
 from app.models.infra import (
     AgentBatch, AgentCredential, AgentHeartbeat, EnforcementDecision, ExitNode,
     ExitNodeIdentity, ExitNodeObservation, ExitNodePeer, ExitNodeSession,
-    ProtectedIdentity, QuarantineRecord, TailnetDevice, TailnetMember,
+    ProtectedIdentity, QuarantineRecord, TailnetDevice, TailnetMember, IdentityExemption
 )
 from app.models.reminders import Reminder
 from app.models.system import JobRun, Setting
@@ -17,5 +17,5 @@ __all__ = [
     "ClientIdentity", "EnforcementDecision", "ExitNode", "ExitNodeIdentity", "ExitNodeObservation",
     "ExitNodePeer", "ExitNodeSession", "Expense", "ExpenseCategory", "JobRun", "Member", "Payment",
     "PaymentMethod", "ProtectedIdentity", "QuarantineRecord", "Reminder", "Setting", "Subscription",
-    "SubscriptionPlan", "TailnetDevice", "TailnetMember",
+    "SubscriptionPlan", "TailnetDevice", "TailnetMember", "IdentityExemption"
 ]
