@@ -4,6 +4,9 @@
     python -m app.cli set-password --email x@y.z
     python -m app.cli create-agent --name stray --ip 100.85.214.5 [--rotate]
     python -m app.cli revoke-agent --key-id agt_xxxxxxxxxxxxxxxx
+    python -m app.cli protect-identity --login x@y.z [--reason "..."]
+    python -m app.cli show-identities
+    python -m app.cli reconcile [--plan]
 """
 import argparse
 import getpass
@@ -16,10 +19,10 @@ from sqlalchemy import select, update
 from app.core.security import hash_password
 from app.db.session import get_sessionmaker
 from app.models.admin import AdminSession, AdminUser
-from app.services import agent_admin
-from app.services.auth import audit
 from app.schemas.protected import ProtectedIn
+from app.services import agent_admin
 from app.services import protected as protected_svc
+from app.services.auth import audit
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_LENGTH = 12
@@ -97,12 +100,13 @@ def revoke_agent(key_id: str) -> None:
 
 
 def protect_identity(login: str, reason: str | None) -> None:
+    from fastapi import HTTPException
     from pydantic import ValidationError
+
     try:
         data = ProtectedIn(login_name=login, reason=reason)
     except ValidationError:
         sys.exit("Refusé : login invalide.")
-    from fastapi import HTTPException
     with get_sessionmaker()() as db:
         try:
             out = protected_svc.add_protected(db, login=data.login_name, reason=data.reason, admin_id=None, label="cli")
@@ -118,7 +122,8 @@ def show_identities() -> None:
     with get_sessionmaker()() as db:
         page = identities_svc.evaluate_identities(
             db, SystemClock(), verdict=None, active_now=None, q=None, limit=200, offset=0)
-    print(f"Évalué à {page.evaluated_at:%Y-%m-%d %H:%M:%S} UTC — actif = confirmé dans les {page.recency_seconds // 60} dernières minutes")
+    print(f"Évalué à {page.evaluated_at:%Y-%m-%d %H:%M:%S} UTC — actif = confirmé dans les "
+          f"{page.recency_seconds // 60} dernières minutes")
     print(f"{'login':40} {'partage':7} {'actif':5} {'verdict':18} {'raison':24} membre")
     for e in page.items:
         print(f"{e.login_name[:40]:40} {'oui' if e.is_sharee else 'non':7} {'oui' if e.active_now else 'non':5} "
@@ -163,23 +168,23 @@ def main() -> None:
     p5.add_argument("--login", required=True)
     p5.add_argument("--reason")
     sub.add_parser("show-identities")
+    p7 = sub.add_parser("reconcile")
+    p7.add_argument("--plan", action="store_true", help="calcule sans rien écrire")
     args = parser.parse_args()
-    p6 = sub.add_parser("reconcile")
-    p6.add_argument("--plan", action="store_true", help="calcule sans rien écrire")
     if args.cmd == "create-admin":
         create_admin(args.email, args.name)
     elif args.cmd == "set-password":
         set_password(args.email)
     elif args.cmd == "create-agent":
         create_agent(args.name, args.ip, args.rotate)
+    elif args.cmd == "revoke-agent":
+        revoke_agent(args.key_id)
     elif args.cmd == "protect-identity":
         protect_identity(args.login, args.reason)
     elif args.cmd == "show-identities":
         show_identities()
-    elif args.cmd == "reconcile":
-        reconcile_once(args.plan)
     else:
-        revoke_agent(args.key_id)
+        reconcile_once(args.plan)
 
 
 if __name__ == "__main__":
