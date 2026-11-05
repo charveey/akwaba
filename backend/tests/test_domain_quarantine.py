@@ -6,8 +6,8 @@ import pytest
 from app.domain.identity import Verdict as V
 from app.domain.quarantine import (
     AUTHORIZED, BLOCKED_STATUSES, CHANGE, DISMISSED, EXPIRED, MANUAL_REVIEW, NONE, OPEN, OPEN_STATUSES, PENDING,
-    PENDING_REVOCATION, WINDOW, WOULD_BLOCK, WOULD_UNBLOCK, AdminAction, InvalidTransition, OpenRecord,
-    admin_resolution, next_step, suppressed_until,
+    PENDING_REVOCATION, WINDOW, WOULD_BLOCK, WOULD_UNBLOCK, AdminAction, InvalidTransition, OpenRecord, Transition,
+    guard, admin_resolution, next_step, suppressed_until,
 )
 
 T0 = datetime(2040, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -70,9 +70,9 @@ def test_no_record_is_opened(over, reason):
     assert (t.kind, t.reason) == (NONE, reason)
 
 
-def test_the_exemption_only_covers_unknown_identities():
+def test_the_exemption_covers_unauthorized_verdicts_but_never_a_review():
     assert step(exempt=True, status_verdict=V.UNKNOWN_IDENTITY).kind == NONE
-    assert step(exempt=True, status_verdict=V.EXPIRED_CANDIDATE).kind == OPEN
+    assert step(exempt=True, status_verdict=V.EXPIRED_CANDIDATE).kind == NONE
     assert step(exempt=True, status_verdict=V.MANUAL_REVIEW).kind == OPEN
 
 
@@ -234,3 +234,39 @@ def test_admin_actions_accept_plain_strings_and_refuse_unknown_ones():
     assert admin_resolution("DISMISS", PENDING).new_status == DISMISSED
     with pytest.raises(ValueError):
         admin_resolution("DETRUIRE", PENDING)
+
+
+def tr(decision, new=EXPIRED):
+    return Transition(CHANGE, new, decision, reason="r")
+
+
+def test_guard_defers_a_block_while_the_agent_is_unhealthy():
+    t, anomaly = guard(tr(WOULD_BLOCK), healthy=False, block_in_effect=False)
+    assert (t.kind, t.new_status, t.decision, t.reason, anomaly) == (NONE, None, None, "agent_unhealthy", None)
+    t, _ = guard(tr(WOULD_BLOCK), healthy=False, block_in_effect=True)
+    assert t.kind == NONE
+
+
+def test_guard_never_duplicates_a_block():
+    t, anomaly = guard(tr(WOULD_BLOCK), healthy=True, block_in_effect=True)
+    assert (t.kind, t.new_status, t.decision, anomaly) == (CHANGE, EXPIRED, None, "block_already_in_effect")
+
+
+def test_guard_writes_an_unblock_only_when_a_block_is_in_effect():
+    t, anomaly = guard(tr(WOULD_UNBLOCK, AUTHORIZED), healthy=True, block_in_effect=False)
+    assert (t.new_status, t.decision, anomaly) == (AUTHORIZED, None, "unblock_without_block")
+    t, anomaly = guard(tr(WOULD_UNBLOCK, AUTHORIZED), healthy=True, block_in_effect=True)
+    assert (t.decision, anomaly) == (WOULD_UNBLOCK, None)
+
+
+def test_an_unhealthy_agent_never_holds_back_an_unblock_or_an_opening():
+    t, _ = guard(tr(WOULD_UNBLOCK, AUTHORIZED), healthy=False, block_in_effect=True)
+    assert t.decision == WOULD_UNBLOCK
+    opening = Transition(OPEN, PENDING, expires_at=T0 + WINDOW, reason="unauthorized_active")
+    assert guard(opening, healthy=False, block_in_effect=False) == (opening, None)
+
+
+def test_guard_leaves_transitions_without_decision_untouched():
+    for healthy, effective in itertools.product((False, True), (False, True)):
+        for t in (Transition(NONE, reason="waiting"), tr(None, MANUAL_REVIEW)):
+            assert guard(t, healthy=healthy, block_in_effect=effective) == (t, None)

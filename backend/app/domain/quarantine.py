@@ -2,10 +2,10 @@
 
 Retourne une transition ; le service qui l'applique écrit le dossier, la décision (dry-run) et l'audit.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.domain.identity import Verdict
 
@@ -133,7 +133,7 @@ def _without_record(now: datetime, active_now: bool, verdict: Verdict, exempt: b
         return _none("clean")
     if not active_now:
         return _none("inactive")
-    if exempt and verdict is Verdict.UNKNOWN_IDENTITY:
+    if exempt and verdict in _UNAUTHORIZED:
         return _none("exempt")
     if suppressed is not None and now < suppressed:
         return _none("dismissed_recently")
@@ -151,3 +151,20 @@ def admin_resolution(action: AdminAction, status: str) -> Transition:
     new = AUTHORIZED if AdminAction(action) is AdminAction.AUTHORIZE else DISMISSED
     unblock = WOULD_UNBLOCK if status in BLOCKED_STATUSES else None
     return Transition(CHANGE, new, unblock, resolved=True, reason="admin_" + new.lower())
+
+
+def guard(transition: Transition, *, healthy: bool, block_in_effect: bool) -> Tuple[Transition, Optional[str]]:
+    """Gardes de sûreté appliquées à une transition, avant toute écriture.
+
+    healthy         : l'agent a envoyé un heartbeat récent, avec conntrack et whois en état.
+    block_in_effect : la dernière décision de l'identité est un WOULD_BLOCK.
+    Retourne (transition retenue, anomalie éventuelle).
+    """
+    if transition.decision == WOULD_BLOCK:
+        if not healthy:
+            return Transition(NONE, reason="agent_unhealthy"), None          # le dossier reste en l'état
+        if block_in_effect:
+            return replace(transition, decision=None), "block_already_in_effect"
+    if transition.decision == WOULD_UNBLOCK and not block_in_effect:
+        return replace(transition, decision=None), "unblock_without_block"
+    return transition, None
