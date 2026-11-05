@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import agent, auth, billing, finance, health, identities, members, protected, reminders, reports
+from app.api import agent, auth, billing, finance, health, identities, members, protected, quarantine, reminders, reports
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.db.session import dispose_engine
@@ -49,6 +49,9 @@ def create_app() -> FastAPI:
     app.include_router(agent.router, prefix="/api")
     app.include_router(protected.router, prefix="/api")
     app.include_router(identities.router, prefix="/api")
+    app.include_router(quarantine.quarantine_router, prefix="/api")
+    app.include_router(quarantine.decisions_router, prefix="/api")
+    app.include_router(quarantine.exemptions_router, prefix="/api")
     return app
 
 
