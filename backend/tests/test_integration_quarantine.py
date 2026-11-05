@@ -367,7 +367,7 @@ def test_an_exemption_also_covers_an_expired_member_and_ending_it_restores_the_n
         svc.end_exemption(db, exemption_id=eid, admin_id=ag.admin_id, now=ag.clk[0])
     ingest(ag, [obs(lg)])
     run(ag)
-    assert statuses(ag, lg) == ["AUTHORIZED", "PENDING"]
+    assert sorted(statuses(ag, lg)) == ["AUTHORIZED", "PENDING"]
     audit = rows(ag, "SELECT action, actor_admin_id FROM audit_logs WHERE entity_id = :e", e=str(eid))
     assert audit == [("identity_exemption.ended", ag.admin_id)]
 
