@@ -112,7 +112,9 @@ def test_every_editor_task_calls_an_existing_executable_script():
         script = ROOT / t["command"].replace("${workspaceFolder}/", "")
         assert script.exists() and os.access(script, os.X_OK), t["label"]
     for t in zed:
-        script = ROOT / t["command"]
+        # Chemin ABSOLU : Zed lance `bash -i -c`, et un ~/.bashrc qui change de répertoire casserait un chemin relatif.
+        assert t["command"].startswith("$ZED_WORKTREE_ROOT/"), t["label"]
+        script = ROOT / t["command"].replace("$ZED_WORKTREE_ROOT/", "")
         assert script.exists() and os.access(script, os.X_OK), t["label"]
         assert t.get("cwd") == "$ZED_WORKTREE_ROOT", t["label"]
     assert any(t.get("group", {}).get("isDefault") for t in vscode if isinstance(t.get("group"), dict))
@@ -144,3 +146,16 @@ def test_shared_editor_files_are_tracked_and_env_test_is_ignored():
         assert not ignored(path), path
     for path in (".env.test", ".env", ".vscode/launch.json"):
         assert ignored(path), path
+
+
+def test_zed_tasks_survive_a_bashrc_that_changes_directory(tmp_path):
+    """Reproduit l'appel de Zed (`bash -i -c`) avec un ~/.bashrc qui fait `cd` ailleurs."""
+    (tmp_path / ".bashrc").write_text('cd "$HOME"\n')
+    _, zed = _tasks()
+    task = next(t for t in zed if "python-pytest-method" in t.get("tags", []))
+    cmd = task["command"] + ' --plan "$ZED_FILE" -k test_x'
+    res = subprocess.run(["/bin/bash", "-i", "-c", cmd], cwd=ROOT, capture_output=True, text=True, timeout=30,
+                         env={**os.environ, "HOME": str(tmp_path), "ZED_WORKTREE_ROOT": str(ROOT),
+                              "ZED_FILE": str(ROOT / "backend" / "tests" / "test_csv_and_mask.py")})
+    assert res.returncode == 0, res.stderr
+    assert "cd backend && " in res.stdout and res.stdout.split("\n")[0].endswith("-k test_x")
