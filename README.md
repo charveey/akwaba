@@ -157,7 +157,7 @@ git fetch origin && git checkout phase-11a-dashboard-socle
 # 1. Ajouter dans .env l'origine du dashboard (obligatoire, sinon le backend ne démarre pas) :
 #      ALLOWED_ORIGINS=https://ubuntu.tail14614.ts.net:8443
 ./deploy/migrate-network-11a.sh --check   # contrôles seuls (chevauchement réseau, volume, .env)
-./deploy/migrate-network-11a.sh           # sauvegarde pg_dump, down (SANS -v), up, vérifications
+./deploy/migrate-network-11a.sh           # sauvegarde pg_dump, build backend, down (SANS -v), up, vérifications
 sudo ./deploy/tailscale/serve-8443.sh     # ajoute 8443 sans toucher à 443 / Funnel (jamais de reset)
 ./deploy/verify-11a.sh                    # ports, Nginx, agent, Funnel, mode dry-run
 ```

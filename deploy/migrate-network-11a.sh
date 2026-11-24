@@ -110,8 +110,10 @@ chmod 600 "$dump"
 log "    $dump ($(du -h "$dump" | cut -f1))"
 
 # --- 5. Image Nginx --------------------------------------------------------------------
-log "5/8 Téléchargement de l'image web"
+log "5/8 Image web + reconstruction du backend (code de la Phase 11a)"
 docker compose pull web
+# Le backend est construit localement : sans --build, l'ancienne image serait réutilisée.
+docker compose build backend
 
 # --- 6. Arrêt / redémarrage (SANS -v) ---------------------------------------------------
 log "6/8 Arrêt de la pile (le volume est conservé)"
@@ -148,6 +150,11 @@ subnet_now="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}
 [[ "$subnet_now" == "$SUBNET" ]] || fail "sous-réseau inattendu : $subnet_now"
 web_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose ps -q web)")"
 [[ "$web_ip" == "$WEB_IP" ]] || fail "IP de web inattendue : $web_ip"
+
+docker compose exec -T backend test -f /srv/app/core/origin.py \
+  || fail "le backend tourne avec une image antérieure à la Phase 11a : docker compose build backend && docker compose up -d backend"
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/auth/login || true)"
+[[ "$code" == 403 ]] || fail "vérification d'origine inactive (POST sans Origin → $code, attendu 403)"
 
 log "Migration réussie : volume $volume conservé, données identiques, web=$WEB_IP."
 log "Étapes suivantes :"

@@ -43,8 +43,15 @@ csp="$(curl -s -D - -o /dev/null http://127.0.0.1:8080/ | grep -i '^content-secu
 [[ "$(code http://127.0.0.1:8080/api/health)" == 200 ]] && ok "/api/health via Nginx → 200" || ko "/api/health via Nginx"
 [[ "$(code -X POST http://127.0.0.1:8080/api/agent/ping)" == 404 ]] && ok "/api/agent/ping via Nginx → 404" || ko "/api/agent/ via Nginx n'est pas bloqué"
 [[ "$(code http://127.0.0.1:8080/inexistant)" == 404 ]] && ok "route inconnue → 404" || ko "route inconnue"
-[[ "$(code -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/auth/login)" == 403 ]] \
-  && ok "connexion sans Origin → 403 (vérification d'origine active)" || ko "connexion sans Origin acceptée"
+c="$(code -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/auth/login)"
+[[ "$c" == 403 ]] && ok "connexion sans Origin → 403 (vérification d'origine active)" \
+  || ko "connexion sans Origin → $c (attendu 403)"
+if docker compose exec -T backend test -f /srv/app/core/origin.py 2>/dev/null; then
+  ok "image backend à jour (Phase 11a)"
+else
+  ko "image backend antérieure à la Phase 11a : docker compose build backend && docker compose up -d backend"
+fi
+
 
 echo "== Backend direct (agent)"
 [[ "$(code "http://$TAILNET_IP:8000/api/health")" == 200 ]] && ok "http://$TAILNET_IP:8000/api/health → 200" || ko "backend injoignable sur $TAILNET_IP:8000"
