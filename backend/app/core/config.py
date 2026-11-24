@@ -42,8 +42,18 @@ class Settings(BaseSettings):
     session_absolute_days: int = Field(default=7, ge=1, le=90)
     login_max_failures: int = Field(default=5, ge=3, le=20)
     login_lockout_minutes: int = Field(default=15, ge=1, le=1440)
+
     reconciler_enabled: bool = False
     reconciler_interval_seconds: int = Field(default=60, ge=10, le=3600)
+
+    purge_enabled: bool = False
+    purge_interval_seconds: int = Field(default=3600, ge=300, le=86400)
+    purge_batch_size: int = Field(default=5000, ge=100, le=50000)
+    retention_heartbeats_days: int = Field(default=30, ge=7, le=3650)
+    retention_job_runs_days: int = Field(default=30, ge=7, le=3650)
+    retention_observations_days: int = Field(default=90, ge=14, le=3650)
+    retention_sessions_days: int = Field(default=365, ge=14, le=3650)
+
     # IP ou CIDR séparés par des virgules (ex. "100.85.214.5").
     agent_allowed_ips: str = ""
 

@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.db.session import dispose_engine
 from app.jobs.reconciler import build_reconciler
+from app.jobs.purge import build_purge
 
 logger = logging.getLogger("akwaba")
 
@@ -17,15 +18,15 @@ logger = logging.getLogger("akwaba")
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     s = get_settings()
     logger.info(
-        "démarrage version=%s revocation_mode=%s enforcer_enabled=%s reconciler_enabled=%s",
-        s.app_version, s.revocation_mode, s.enforcer_enabled, s.reconciler_enabled,
+        "démarrage version=%s revocation_mode=%s enforcer_enabled=%s reconciler_enabled=%s purge_enabled=%s",
+        s.app_version, s.revocation_mode, s.enforcer_enabled, s.reconciler_enabled, s.purge_enabled,
     )
-    reconciler = build_reconciler(s)
-    if reconciler is not None:
-        reconciler.start()
+    loops = [loop for loop in (build_reconciler(s), build_purge(s)) if loop is not None]
+    for loop in loops:
+        loop.start()
     yield
-    if reconciler is not None:
-        reconciler.stop(timeout=8)
+    for loop in loops:
+        loop.stop(timeout=8)
     dispose_engine()
     logger.info("arrêt")
 

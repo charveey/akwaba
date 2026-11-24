@@ -150,6 +150,24 @@ def reconcile_once(plan: bool) -> None:
               f"{p.decision or '-':14} {p.reason}")
 
 
+def purge_once(plan: bool) -> None:
+    from app.core.config import get_settings
+    from app.domain.clock import SystemClock
+    from app.services import purge as purge_svc
+
+    s = get_settings()
+    retention = purge_svc.Retention(
+        heartbeats_days=s.retention_heartbeats_days, job_runs_days=s.retention_job_runs_days,
+        observations_days=s.retention_observations_days, sessions_days=s.retention_sessions_days)
+    report = purge_svc.run_purge_job(get_sessionmaker(), SystemClock(), retention=retention,
+                                     batch_size=s.purge_batch_size, apply=not plan)
+    if report is None:
+        sys.exit("Une autre purge est en cours.")
+    print(("PLAN (rien n'est supprimé)" if plan else "PURGE APPLIQUÉE") +
+          f" — erreurs {report.errors}" + (", reste à purger" if report.capped else ""))
+    for table, n in report.deleted.items():
+        print(f"  {table:26} {n}")
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -170,6 +188,8 @@ def main() -> None:
     sub.add_parser("show-identities")
     p7 = sub.add_parser("reconcile")
     p7.add_argument("--plan", action="store_true", help="calcule sans rien écrire")
+    p8 = sub.add_parser("purge")
+    p8.add_argument("--plan", action="store_true", help="compte sans rien supprimer")
     args = parser.parse_args()
     if args.cmd == "create-admin":
         create_admin(args.email, args.name)
@@ -183,6 +203,8 @@ def main() -> None:
         protect_identity(args.login, args.reason)
     elif args.cmd == "show-identities":
         show_identities()
+    elif args.cmd == "purge":
+        purge_once(args.plan)
     else:
         reconcile_once(args.plan)
 
