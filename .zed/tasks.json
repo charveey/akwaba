@@ -1,5 +1,10 @@
 [
   {
+    "label": "Akwaba : préparer l'environnement (une fois)",
+    "command": "$ZED_WORKTREE_ROOT/tests/setup-dev.sh",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
     "label": "Akwaba : test sous le curseur",
     "command": "$ZED_WORKTREE_ROOT/tests/run.sh",
     "args": [

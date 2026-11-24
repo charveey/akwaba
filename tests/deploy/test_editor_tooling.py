@@ -159,3 +159,23 @@ def test_zed_tasks_survive_a_bashrc_that_changes_directory(tmp_path):
                               "ZED_FILE": str(ROOT / "backend" / "tests" / "test_csv_and_mask.py")})
     assert res.returncode == 0, res.stderr
     assert "cd backend && " in res.stdout and res.stdout.split("\n")[0].endswith("-k test_x")
+
+
+def test_setup_task_is_offered_in_both_editors_and_plans_safely():
+    vscode, zed = _tasks()
+    assert vscode[0]["command"].endswith("/tests/setup-dev.sh") and zed[0]["command"].endswith("/tests/setup-dev.sh")
+    res = subprocess.run([str(ROOT / "tests" / "setup-dev.sh"), "--plan"], cwd=ROOT, capture_output=True, text=True,
+                         timeout=60)
+    assert res.returncode == 0, res.stderr
+    lines = res.stdout
+    assert "-r " + str(ROOT / "backend" / "requirements.lock") in lines
+    lock_line = next(ln for ln in lines.splitlines() if "requirements.lock" in ln)
+    assert "pytest" not in lock_line, "lock (avec empreintes) et outils de test : deux commandes pip séparées"
+    assert "pytest>=8" in lines
+
+
+def test_vscode_interpreter_points_to_the_venv_created_by_setup():
+    for comp, prefix in (("backend", "${workspaceFolder}/../"), ("agent", "${workspaceFolder}/../"), (".", "${workspaceFolder}/")):
+        s = json.loads((ROOT / comp / ".vscode" / "settings.json").read_text())
+        assert s["python.defaultInterpreterPath"] == prefix + ".venv/bin/python"
+    assert 'VENV="$ROOT/.venv"' in (ROOT / "tests" / "setup-dev.sh").read_text()

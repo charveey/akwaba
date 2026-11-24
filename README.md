@@ -354,14 +354,11 @@ docker compose up -d                  # recrée postgres, backend et web (config
 
 ## Développement : tests depuis Zed et VS Code
 
-Une seule fois sur le poste : un environnement Python et une base de test jetable (Docker).
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.lock            # versions figées, avec empreintes
-.venv/bin/pip install "pytest>=8" "httpx>=0.27" packaging      # outils de test (commande séparée)
-tests/test-db.sh up       # PostgreSQL 16 de test sur 127.0.0.1:5433 (en mémoire) + écrit .env.test
-```
+Une seule fois sur le poste, depuis l'éditeur : tâche **« Akwaba : préparer l'environnement (une fois) »**
+(VS Code : `Terminal › Run Task` ; Zed : `task: spawn`), ou `tests/setup-dev.sh`. Elle crée `.venv`
+(Python 3.12 de préférence), installe les dépendances figées puis les outils de test, et démarre la base de
+test jetable si Docker est disponible (`tests/test-db.sh up` : PostgreSQL 16 sur 127.0.0.1:5433, en mémoire,
+écrit `.env.test`). Relançable sans risque. Dans VS Code, ensuite : « Developer: Reload Window ».
 
 - **Zed** : ouvrir le dossier du dépôt. Les boutons ▶ dans la marge des tests Python et JavaScript lancent
   le test sous le curseur (ou le fichier) dans le bon répertoire. Palette `task: spawn` → « Akwaba : … »
