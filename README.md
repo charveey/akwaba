@@ -254,6 +254,32 @@ docker compose build backend && docker compose up -d backend   # si le code back
 ./deploy/verify-all.sh
 ```
 
+## Déploiement (Phase 13b) — procédure standard
+
+```bash
+git fetch origin && git checkout <branche>     # ou : git pull
+./deploy/deploy.sh --plan                      # vérifications préalables seulement, rien n'est modifié
+./deploy/deploy.sh                             # déploie le commit extrait
+```
+
+1. **Vérifications préalables** — si l'une échoue, rien n'est modifié : `.env` en `600` et complet,
+   `REVOCATION_MODE=dry_run` / `ENFORCER_ENABLED=false`, cookie `Secure`, origines `https`, dépôt sans
+   modification non commitée, 2 Go libres, PostgreSQL démarré avec la **même variante Debian** que l'image
+   figée (sinon : collations, `REINDEX`), un seul déploiement à la fois.
+2. **Sauvegarde** `pg_dump` vérifiée (`pg_restore --list`) : `backups/akwaba-pre-deploy-<commit>-<date>.dump` (600).
+3. **Images** : `docker compose pull postgres web` ; l'image en place est conservée sous
+   `akwaba-backend:precedent` ; nouvelle image `akwaba-backend:<commit>` (+ `0.1.0`).
+4. **Migrations** avec la nouvelle image (`docker compose run --rm --no-deps`), seulement si la tête Alembic
+   diffère de la base — toujours après la sauvegarde, avant le redémarrage du backend.
+5. **Redémarrage** de postgres et backend, puis `web` **recréé** (jamais de montage orphelin du frontend) ;
+   attente de l'état `healthy`.
+6. **`./deploy/verify-all.sh`**. Journal complet : `backups/deploy-<date>.log` (600).
+
+En cas d'échec, le script s'arrête et affiche le retour arrière (image `precedent`, commit précédent,
+sauvegarde à restaurer si une migration a été appliquée). Il ne lance jamais `docker compose down`, ne
+supprime ni volume ni image, ne touche ni à Tailscale (443/8443), ni au port 8000, ni à `.env`.
+Les scripts `deploy-11b/11c/11d.sh` sont conservés pour l'historique.
+
 ## Déploiement du lot 13a (images figées, durcissement, journaux bornés)
 
 Images figées : `postgres:16.16-trixie`, `python:3.12.16-slim-trixie` (backend), `nginx:1.30.8-alpine`.
