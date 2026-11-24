@@ -282,7 +282,36 @@ sudo sh deploy/backup/setup-exit-node.sh 'ssh-ed25519 AAAA… akwaba-backup@serv
 sauvegarde ou copie a plus de 26 h, si le dernier test de restauration réussi a plus de 8 jours, ou si le
 minuteur est inactif. Lire une archive (sur votre poste) :
 `age -d -i akwaba-backup.key akwaba-<date>.tar.age | tar -xv` → `akwaba.dump`, `env`, `meta.json`.
-La restauration en production est l'objet du lot 14b.
+Restauration en production : voir la Phase 14b ci-dessous.
+
+## Restauration et annulation d'un déploiement (Phase 14b)
+
+```bash
+# Annuler le dernier déploiement (image et commit précédents) :
+./deploy/rollback.sh --plan                    # diagnostic : code seul, ou base à restaurer ?
+./deploy/rollback.sh                           # saisir ANNULER
+# Restaurer la base depuis un dump du serveur (avant déploiement / avant restauration) :
+./deploy/restore.sh backups/akwaba-pre-deploy-<commit>-<date>.dump      # saisir RESTAURER
+# … ou depuis une archive chiffrée (clé privée apportée le temps de la restauration, puis effacée) :
+./deploy/restore.sh akwaba-<date>.tar.age --identity akwaba-backup.key
+```
+
+**`restore.sh`** — rien n'est modifié tant que les vérifications ne sont pas toutes passées : archive
+déchiffrable et intègre (empreinte des métadonnées), dump lisible, révision Alembic connue du code en
+place (une sauvegarde **plus récente** que le code est refusée : extraire d'abord le commit de `meta.json`),
+`.env` de l'archive identique à l'actuel (sinon `--restaurer-env`, l'ancien `.env` est gardé à côté).
+Ensuite : confirmation `RESTAURER`, sauvegarde de l'état actuel (`akwaba-pre-restore-<date>.dump`), arrêt
+du backend et de web (PostgreSQL reste démarré, l'agent garde ses lots), restauration dans une base
+**temporaire** vérifiée, puis **échange par renommage** : la base actuelle est conservée sous
+`<base>_avant_restauration_<date>` (jamais supprimée ; la commande pour la supprimer plus tard est affichée).
+Une sauvegarde plus ancienne que le code est migrée ; redémarrage ; `verify-all.sh`. En cas d'échec avant
+l'échange, la production n'a pas été touchée ; après, les commandes pour revenir en arrière sont affichées.
+
+**`rollback.sh`** — revient à `akwaba-backend:precedent` et à son commit (HEAD détachée). Si le déploiement
+annulé n'a pas migré la base : code seul, aucune perte de données. S'il l'a migrée : restauration du dump
+pris par `deploy.sh` juste avant ce déploiement (les données écrites depuis restent dans la base conservée).
+L'image annulée est gardée sous `akwaba-backend:annule-<commit>` ; revenir en avant : `git checkout <branche>
+&& ./deploy/deploy.sh`.
 
 ## Déploiement (Phase 13b) — procédure standard
 
