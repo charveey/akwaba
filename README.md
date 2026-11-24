@@ -98,7 +98,7 @@ Routage par fragment (`#/membres`), thème clair par défaut et thème sombre, r
   et fait confiance à `X-Forwarded-For` venant de `127.0.0.1`/`::1`, avant le contrôle `TRUSTED_PROXY_IPS` de
   l'application. Sans effet en production (aucun client n'atteint le conteneur par son loopback : Nginx arrive
   de `10.250.11.10`, l'agent de son IP tailnet), mais reproduit par
-  `test_known_limitation_uvicorn_trusts_forwarded_headers_from_loopback` (résultat `xfail`).
+  `test_known_limitation_uvicorn_trusts_forwarded_headers_from_loopback` (résultat `xfail`) ; correction suivie dans l'issue #8.
 - `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + limite de taille
   (l'IP seule n'authentifie jamais). **Jamais servi par Nginx** (404).
 - Admin : HTTPS via `tailscale serve --https=8443`, cookie `HttpOnly` / `Secure` / `SameSite=Strict`

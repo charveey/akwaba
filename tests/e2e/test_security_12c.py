@@ -353,7 +353,7 @@ def test_known_limitation_uvicorn_trusts_forwarded_headers_from_loopback(stack):
     (`--no-proxy-headers` dans la commande du conteneur) n'est pas validée."""
     recorded = _login_direct_with_spoof(stack, "127.0.0.1", "127.0.0.1")
     if recorded == SPOOF["X-Forwarded-For"]:
-        pytest.xfail("Limitation connue : uvicorn --proxy-headers fait confiance à X-Forwarded-For depuis 127.0.0.1")
+        pytest.xfail("Limitation connue (issue #8) : uvicorn --proxy-headers fait confiance à X-Forwarded-For depuis 127.0.0.1")
     assert recorded == "127.0.0.1"
 
 
