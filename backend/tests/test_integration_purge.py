@@ -60,6 +60,10 @@ def one(ag, sql, **p):
     with ag.engine.connect() as c:
         return c.execute(text(sql), p).scalar_one()
 
+def rows(ag, sql, **p):
+    with ag.engine.connect() as c:
+        return c.execute(text(sql), p).all()
+
 
 def seed_heartbeat(ag, at):
     with ag.engine.begin() as c:
@@ -146,8 +150,7 @@ def test_a_batch_is_deleted_only_when_none_of_its_observations_remain(ag):
     recent = seed_batch(ag, NOW - 5 * DAY)
     report = run(ag)                                           # l'ordre observations -> lots ne lève aucune erreur
     assert report.errors == 0
-    kept = {r[0] for r in ag.engine.connect().execute(
-        text("SELECT batch_id FROM agent_batches WHERE exit_node_id = :n"), {"n": ag.node_id})}
+    kept = {r[0] for r in rows(ag, "SELECT batch_id FROM agent_batches WHERE exit_node_id = :n", n=ag.node_id)}
     assert kept == {catch_up, recent} and both_old not in kept and empty not in kept
     assert counts(ag)["observations"] == 2
 
@@ -213,11 +216,11 @@ def test_a_purge_job_is_recorded_and_the_lock_is_exclusive(ag):
     seed_heartbeat(ag, NOW - 40 * DAY)
     report = svc.run_purge_job(ag.maker, FixedClock(NOW))
     assert report is not None and report.deleted["agent_heartbeats"] >= 1
-    [(status, details, error)] = ag.engine.connect().execute(text(
-        "SELECT status, details, error FROM job_runs WHERE job_name = 'purge' ORDER BY id DESC LIMIT 1")).all()
+    [(status, details, error)] = rows(
+            ag, "SELECT status, details, error FROM job_runs WHERE job_name = 'purge' ORDER BY id DESC LIMIT 1")
     assert (status, error) == ("SUCCESS", None) and details["deleted"]["agent_heartbeats"] >= 1
-    conn = ag.engine.connect().execution_options(isolation_level="AUTOCOMMIT")
-    conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": svc.LOCK_KEY})
+    with ag.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": svc.LOCK_KEY})
     try:
         assert svc.run_purge_job(ag.maker, FixedClock(NOW)) is None
     finally:
@@ -239,6 +242,6 @@ def test_a_failing_purge_is_recorded_as_failed_and_the_error_is_raised(ag, monke
     monkeypatch.setattr(svc, "purge", boom)
     with pytest.raises(RuntimeError):
         svc.run_purge_job(ag.maker, FixedClock(NOW))
-    [(status, error)] = ag.engine.connect().execute(text(
-        "SELECT status, error FROM job_runs WHERE job_name = 'purge' ORDER BY id DESC LIMIT 1")).all()
+    [(status, error)] = rows(
+        ag, "SELECT status, error FROM job_runs WHERE job_name = 'purge' ORDER BY id DESC LIMIT 1")
     assert (status, error) == ("FAILED", "RuntimeError")
