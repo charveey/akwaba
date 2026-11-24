@@ -59,13 +59,13 @@ def wait_port(port: int, timeout: float = 20) -> None:
 class Backend:
     """Backend uvicorn réel, arrêtable et redémarrable sur le même port (lot 12a : coupure réseau de l'agent)."""
 
-    def __init__(self, env, port, log):
-        self.env, self.port, self.log, self.proc = env, port, log, None
+    def __init__(self, env, port, log, host="127.0.0.1"):
+        self.env, self.port, self.log, self.proc, self.host = env, port, log, None, host
 
     def start(self):
         assert self.proc is None or self.proc.poll() is not None, "backend déjà démarré"
         self.proc = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(self.port)],
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", self.host, "--port", str(self.port)],
             cwd=BACKEND, env=self.env, stdout=open(self.log, "a"), stderr=subprocess.STDOUT)
         wait_port(self.port)
         return self
@@ -158,7 +158,9 @@ server {{
     location / {{
         proxy_pass http://127.0.0.1:{nginx_port};
         proxy_set_header Host $http_host;
-        proxy_set_header X-Forwarded-For "{TAILNET_CLIENT_IP}";
+        # Pire cas (lot 12c) : l'IP tailnet est AJOUTÉE après un éventuel X-Forwarded-For du client,
+        # au lieu de le remplacer ; Nginx (real_ip_recursive off) ne doit garder que la dernière.
+        proxy_set_header X-Forwarded-For "$http_x_forwarded_for, {TAILNET_CLIENT_IP}";
     }}
 }}
 """)

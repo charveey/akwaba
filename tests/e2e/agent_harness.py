@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -199,29 +200,59 @@ def signed_post(agent, path, body, *, secret=None, key_id=None, now=None, nonce=
 
 # --------------------------------------------------------------------------- administration
 
-class Admin:
-    """Session administrateur par la vraie chaîne TLS (serve) → Nginx → backend : cookie, Origin, CSRF."""
+class Client:
+    """Client HTTPS brut par la vraie chaîne TLS (serve) → Nginx → backend, avec son propre cookie."""
 
     def __init__(self, stack) -> None:
         self.base = stack["base"]
         ctx = ssl.create_default_context()
         ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+        self.jar = CookieJar()
         self._opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ctx),
-            urllib.request.HTTPCookieProcessor(CookieJar()))
-        self.post("/api/auth/login", {"email": stack["email"], "password": stack["password"]}, csrf=False)
-        self.csrf = self.get("/api/auth/me")["csrf_token"]
+            urllib.request.HTTPCookieProcessor(self.jar))
 
-    def _send(self, req):
+    def request(self, method: str, path: str, body=None, headers: Optional[dict] = None):
+        """Renvoie (statut, en-têtes, corps texte). `body` : dict (JSON) ou bytes.
+
+        Nginx limite /api/auth/login (10 par minute, rafale de 5) : un 429 de Nginx n'atteint jamais le
+        backend ; la tentative est alors simplement rejouée après le délai de recharge.
+        """
+        for _ in range(15):
+            status, hdrs, raw = self._request_once(method, path, body, headers)
+            if not (status == 429 and path == "/api/auth/login"):
+                return status, hdrs, raw
+            time.sleep(6.5)
+        return status, hdrs, raw
+
+    def _request_once(self, method: str, path: str, body=None, headers: Optional[dict] = None):
+        data = json.dumps(body).encode() if isinstance(body, (dict, list)) else body
+        hdrs = dict(headers or {})
+        if data is not None:
+            hdrs.setdefault("Content-Type", "application/json")
+        req = urllib.request.Request(self.base + path, method=method, data=data, headers=hdrs)
         try:
             with self._opener.open(req, timeout=15) as resp:
-                raw = resp.read().decode()
-                return resp.status, raw
+                return resp.status, resp.headers, resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
-            return exc.code, exc.read().decode()
+            return exc.code, exc.headers, exc.read().decode("utf-8", "replace")
+
+    def cookie(self, name: str) -> Optional[str]:
+        return next((c.value for c in self.jar if c.name == name), None)
+
+
+class Admin(Client):
+    """Session administrateur par la vraie chaîne : cookie, Origin, CSRF."""
+
+    def __init__(self, stack, email: Optional[str] = None, password: Optional[str] = None) -> None:
+        super().__init__(stack)
+        self.post("/api/auth/login", {"email": email or stack["email"], "password": password or stack["password"]},
+                  csrf=False)
+        self.csrf = self.get("/api/auth/me")["csrf_token"]
 
     def get_raw(self, path):
-        return self._send(urllib.request.Request(self.base + path))
+        status, _, raw = self.request("GET", path)
+        return status, raw
 
     def get(self, path):
         status, raw = self.get_raw(path)
@@ -229,11 +260,9 @@ class Admin:
         return json.loads(raw)
 
     def post(self, path, payload=None, *, csrf=True, expect=(200, 201)):
-        headers = {"Content-Type": "application/json", "Origin": self.base}
+        headers = {"Origin": self.base}
         if csrf:
             headers["X-CSRF-Token"] = self.csrf
-        status, raw = self._send(urllib.request.Request(
-            self.base + path, method="POST", headers=headers,
-            data=json.dumps(payload if payload is not None else {}).encode()))
+        status, _, raw = self.request("POST", path, payload if payload is not None else {}, headers)
         assert status in expect, (path, status, raw)
         return json.loads(raw) if raw else None
