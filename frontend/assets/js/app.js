@@ -13,6 +13,10 @@ import { applyTheme } from "./theme.js";
 /** Chargement à la demande des pages (import dynamique : autorisé par script-src 'self'). */
 const PAGES = {
   "/vue-ensemble": () => import("./pages/dashboard.js"),
+  "/membres": () => import("./pages/members.js"),
+  "/membres/:id": () => import("./pages/member-detail.js"),
+  "/abonnements": () => import("./pages/subscriptions.js"),
+  "/paiements": () => import("./pages/payments.js"),
   "/parametres": () => import("./pages/settings.js"),
 };
 const placeholder = () => import("./pages/placeholder.js");
@@ -113,14 +117,20 @@ async function render() {
     return;
   }
 
-  const { route, query } = decision;
-  shell.sidebar.setActive(route.path);
+  const { route, query, params } = decision;
+  shell.sidebar.setActive(route.nav);
   shell.header.setTitle(route.title);
   document.title = `${route.title} — Akwaba`;
   try {
-    const mod = await (PAGES[route.path] || placeholder)();
+    const mod = await (PAGES[route.key] || placeholder)();
     if (token !== renderToken) return;
-    cleanup = mod.render(shell.content, { route, query }) || null;
+    cleanup = mod.render(shell.content, {
+      route, query, params,
+      setTitle: (title) => {
+        shell.header.setTitle(title);
+        document.title = `${title} — Akwaba`;
+      },
+    }) || null;
   } catch (err) {
     if (token !== renderToken) return;
     shell.content.replaceChildren(errorState("Impossible d'afficher cette page.", String(err && err.message), render));

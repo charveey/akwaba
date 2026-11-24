@@ -53,6 +53,17 @@ export function assertApiPath(path) {
   }
 }
 
+/** "/api/members" + { q: "ab", page: null } → "/api/members?q=ab" (valeurs vides ignorées). */
+export function withQuery(path, params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === null || v === undefined || v === "") continue;
+    qs.set(k, String(v));
+  }
+  const str = qs.toString();
+  return str ? `${path}?${str}` : path;
+}
+
 /** Message lisible en français pour une réponse en erreur. */
 export function errorMessage(status, data) {
   const detail = data && data.detail;

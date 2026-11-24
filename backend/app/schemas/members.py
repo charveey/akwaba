@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -103,6 +103,26 @@ class IdentityOut(BaseModel):
     unlinked_at: datetime | None
 
 
+class MemberSubscriptionSummary(BaseModel):
+    """Abonnement actuel du membre (Phase 11b), valeurs calculées par le backend."""
+    subscription_id: uuid.UUID
+    plan_code: str
+    plan_name: str
+    starts_on: date
+    expires_on: date | None
+    display_end: date | None
+    grace_end: date | None
+    is_unlimited: bool
+    access_status: str
+    renewal_status: str
+    payment_status: str
+    payment_kind: str | None
+    plan_changed: bool
+    # L'accès d'un membre est celui de l'abonnement EN VIGUEUR aujourd'hui : après un renouvellement
+    # anticipé, le dernier abonnement (ci-dessus) ne commence qu'à upcoming_starts_on.
+    upcoming_starts_on: date | None = None
+
+
 class MemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -116,6 +136,7 @@ class MemberOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     identities: list[IdentityOut] = []
+    current: MemberSubscriptionSummary | None = None
 
 
 class MemberPage(BaseModel):

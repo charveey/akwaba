@@ -75,6 +75,22 @@ class PaymentOut(BaseModel):
     voided_at: datetime | None
     void_reason: str | None
     created_at: datetime
+    # Phase 11b (lecture) : contexte pour la liste des paiements. None hors de cette liste.
+    member_id: uuid.UUID | None = None
+    member_name: str | None = None
+    plan_code: str | None = None
+    plan_name: str | None = None
+    payment_kind: str | None = None
+    plan_changed: bool | None = None
+
+
+class PaymentTotals(BaseModel):
+    """Sur TOUS les paiements filtrés (pas seulement la page)."""
+    count: int
+    confirmed_count: int
+    voided_count: int
+    # Encaissé en XOF, paiements annulés exclus (XOF : amount ; autres devises : settled_amount).
+    collected_xof: int
 
 
 class PaymentPage(BaseModel):
@@ -82,6 +98,7 @@ class PaymentPage(BaseModel):
     total: int
     limit: int
     offset: int
+    totals: PaymentTotals | None = None
 
 
 class SubscriptionOut(BaseModel):
@@ -105,6 +122,12 @@ class SubscriptionOut(BaseModel):
     renewal_status: str
     created_at: datetime
     payments: list[PaymentOut]
+    # Phase 11b (lecture, calculés par le backend)
+    member_name: str | None = None
+    is_current: bool = True              # aucun renouvellement ne lui succède
+    payment_kind: str | None = None      # PENDING | NEW_MEMBER | LATE_RENEWAL | RENEWED
+    plan_changed: bool = False           # badge « Changement de niveau »
+    starts_in_future: bool = False       # renouvellement anticipé pas encore commencé (accès NONE = « À venir »)
 
 
 class SubscriptionPage(BaseModel):

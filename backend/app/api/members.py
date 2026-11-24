@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
@@ -17,12 +18,22 @@ router = APIRouter(prefix="/members", tags=["members"])
 def list_(
     q: str | None = Query(default=None, max_length=100),
     include_archived: bool = False,
+    access_status: Literal["NONE", "ACTIVE", "GRACE_PERIOD", "EXPIRED", "SUSPENDED"] | None = None,
+    plan_code: str | None = Query(default=None, max_length=40),
+    sort: Literal["-created", "created", "name", "-name", "expiry", "-expiry"] = "-created",
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
 ) -> MemberPage:
-    rows, total = svc.list_members(db, q=q, include_archived=include_archived, limit=limit, offset=offset)
-    return MemberPage(items=[member_out(m, i) for m, i in rows], total=total, limit=limit, offset=offset)
+    rows, total = svc.list_members_overview(
+        db, clock, q=q, include_archived=include_archived, limit=limit, offset=offset,
+        access=access_status, plan_code=plan_code, sort=sort,
+    )
+    return MemberPage(
+        items=[member_out(m, i).model_copy(update={"current": cur}) for m, i, cur in rows],
+        total=total, limit=limit, offset=offset,
+    )
 
 
 @router.post("", response_model=MemberOut, status_code=status.HTTP_201_CREATED)
@@ -33,8 +44,10 @@ def create(
 
 
 @router.get("/{member_id}", response_model=MemberOut, dependencies=[Depends(require_admin)])
-def read(member_id: uuid.UUID, db: Session = Depends(get_db)) -> MemberOut:
-    return member_out(*svc.get_member(db, member_id))
+def read(member_id: uuid.UUID, db: Session = Depends(get_db), clock: Clock = Depends(get_clock)) -> MemberOut:
+    member, identities = svc.get_member(db, member_id)
+    current = svc.current_summaries(db, clock, [member.id]).get(member.id)
+    return member_out(member, identities).model_copy(update={"current": current})
 
 
 @router.put("/{member_id}", response_model=MemberOut)

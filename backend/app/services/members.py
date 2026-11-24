@@ -7,8 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.clock import Clock
+from app.models.billing import Subscription
 from app.models.clients import ClientIdentity, Member
-from app.schemas.members import IdentityIn, MemberIn
+from app.schemas.members import IdentityIn, MemberIn, MemberSubscriptionSummary
 from app.services.audit import record
 from app.services.auth import AuthContext
 
@@ -47,7 +48,7 @@ def get_member(db: Session, member_id: uuid.UUID) -> tuple[Member, list[ClientId
 
 
 def list_members(
-    db: Session, *, q: str | None, include_archived: bool, limit: int, offset: int,
+    db: Session, *, q: str | None, include_archived: bool, limit: int | None, offset: int,
 ) -> tuple[list[tuple[Member, list[ClientIdentity]]], int]:
     stmt = select(Member)
     if not include_archived:
@@ -66,9 +67,10 @@ def list_members(
             login_match,
         ))
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-    members = db.execute(
-        stmt.order_by(Member.created_at.desc(), Member.id).limit(limit).offset(offset)
-    ).scalars().all()
+    ordered = stmt.order_by(Member.created_at.desc(), Member.id)
+    if limit is not None:
+        ordered = ordered.limit(limit).offset(offset)
+    members = db.execute(ordered).scalars().all()
     idents = _identities(db, [m.id for m in members])
     return [(m, idents[m.id]) for m in members], total
 
@@ -166,3 +168,82 @@ def unlink_identity(
            entity_id=ident.id, details={"member_id": str(member_id), "login_name": ident.login_name}, ip=ip)
     db.commit()
     return ident
+
+
+# ---------------------------------------------------------------- Phase 11b : vue d'ensemble (lecture)
+
+MEMBER_SORTS = ("-created", "created", "name", "-name", "expiry", "-expiry")
+
+
+def current_summaries(
+    db: Session, clock: Clock, member_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, MemberSubscriptionSummary]:
+    """Abonnement actuel de chaque membre : dernier abonnement sans successeur (création la plus récente).
+
+    Toutes les valeurs (accès, échéances, statut métier) viennent des fonctions de domaine du backend.
+    """
+    from app.services.billing import subscription_views  # import local : évite un cycle
+
+    if not member_ids:
+        return {}
+    subs = db.execute(
+        select(Subscription).where(Subscription.member_id.in_(member_ids))
+        .order_by(Subscription.created_at, Subscription.id)
+    ).scalars().all()
+    succeeded = {s.previous_subscription_id for s in subs if s.previous_subscription_id is not None}
+    current: dict[uuid.UUID, Subscription] = {}
+    for s in subs:                      # ordre croissant : le dernier gagne
+        if s.id not in succeeded:
+            current[s.member_id] = s
+    # Abonnement en vigueur : en remontant la chaîne depuis le dernier, le premier déjà commencé.
+    by_id = {s.id: s for s in subs}
+    today = clock.today()
+    in_force: dict[uuid.UUID, Subscription] = {}
+    for member_id, head in current.items():
+        node = head
+        while node is not None and node.starts_on > today:
+            node = by_id.get(node.previous_subscription_id) if node.previous_subscription_id else None
+        in_force[member_id] = node or head
+    wanted = {s.id: s for s in [*current.values(), *in_force.values()]}
+    views = {v.id: v for v in subscription_views(db, clock, list(wanted.values()))}
+    out = {}
+    for member_id, s in current.items():
+        v = views[s.id]
+        effective = views[in_force[member_id].id]
+        out[member_id] = MemberSubscriptionSummary(
+            subscription_id=v.id, plan_code=v.plan_code, plan_name=v.plan_name, starts_on=v.starts_on,
+            expires_on=v.expires_on, display_end=v.display_end, grace_end=v.grace_end,
+            is_unlimited=v.is_unlimited, access_status=effective.access_status, renewal_status=v.renewal_status,
+            payment_status=v.payment_status, payment_kind=v.payment_kind, plan_changed=v.plan_changed,
+            upcoming_starts_on=v.starts_on if v.starts_in_future and effective.id != v.id else None,
+        )
+    return out
+
+
+def list_members_overview(
+    db: Session, clock: Clock, *, q: str | None, include_archived: bool, limit: int, offset: int,
+    access: str | None = None, plan_code: str | None = None, sort: str = "-created",
+) -> tuple[list[tuple[Member, list[ClientIdentity], MemberSubscriptionSummary | None]], int]:
+    """Filtres et tris calculés appliqués à TOUS les membres correspondants, puis pagination.
+
+    access="NONE" inclut les membres sans aucun abonnement. Tri secondaire déterministe : identifiant.
+    """
+    rows, _ = list_members(db, q=q, include_archived=include_archived, limit=None, offset=0)
+    summaries = current_summaries(db, clock, [m.id for m, _ in rows])
+    items = [(m, idents, summaries.get(m.id)) for m, idents in rows]
+    if access is not None:
+        items = [it for it in items if (it[2].access_status if it[2] else "NONE") == access]
+    if plan_code is not None:
+        items = [it for it in items if it[2] is not None and it[2].plan_code == plan_code]
+
+    items.sort(key=lambda it: str(it[0].id))                         # clé secondaire stable
+    if sort in ("name", "-name"):
+        items.sort(key=lambda it: it[0].full_name.casefold(), reverse=sort == "-name")
+    elif sort in ("created", "-created"):
+        items.sort(key=lambda it: it[0].created_at, reverse=sort == "-created")
+    else:  # échéance : les membres sans échéance (aucun abonnement, illimité) toujours à la fin
+        dated = [it for it in items if it[2] is not None and it[2].expires_on is not None]
+        undated = [it for it in items if not (it[2] is not None and it[2].expires_on is not None)]
+        dated.sort(key=lambda it: it[2].expires_on, reverse=sort == "-expiry")
+        items = dated + undated
+    return items[offset:offset + limit], len(items)
