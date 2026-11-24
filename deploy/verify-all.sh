@@ -122,6 +122,46 @@ else
     || ok "aucun secret de .env dans les journaux des conteneurs (24 h, $(wc -l <"$TMP/logs" | tr -d ' ') lignes)"
 fi
 
+echo "== Sauvegardes (Phase 14a)"
+BK_DIR="${BACKUP_DIR:-backups}"
+if [[ ! -s "$BK_DIR/config/age-recipients.txt" ]]; then
+  info "ATTENTION : sauvegardes automatiques non configurées — ./deploy/backup/setup-server.sh (voir docs)"
+else
+  # Âges en heures et états lus dans backups/auto/status.json (écrit par backup.sh).
+  bk="$(python3 - "$BK_DIR/auto/status.json" <<'PY' 2>/dev/null
+import json, sys
+from datetime import datetime, timezone
+try:
+    d = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    d = {}
+now = datetime.now(timezone.utc)
+for key in ("backup", "offsite", "restore_test"):
+    b = d.get(key) or {}
+    try:
+        age = int((now - datetime.strptime(b["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)).total_seconds() // 3600)
+    except (KeyError, ValueError):
+        age = -1
+    print(key, "true" if b.get("ok") else "false", age)
+PY
+)"
+  read -r _ b_ok b_age <<<"$(grep '^backup ' <<<"$bk")"
+  read -r _ o_ok o_age <<<"$(grep '^offsite ' <<<"$bk")"
+  read -r _ r_ok r_age <<<"$(grep '^restore_test ' <<<"$bk")"
+  if [[ "$b_ok" == true && "${b_age:--1}" -ge 0 && "$b_age" -le 26 ]]; then ok "dernière sauvegarde chiffrée réussie il y a ${b_age} h"
+  else ko "aucune sauvegarde réussie depuis 26 h (état : ${b_ok:-?}, âge : ${b_age:-?} h)"; fix "./deploy/backup/backup.sh ; journalctl -u akwaba-backup"; fi
+  if [[ -s "$BK_DIR/config/offsite.conf" ]]; then
+    if [[ "$o_ok" == true && "${o_age:--1}" -ge 0 && "$o_age" -le 26 ]]; then ok "copie sur l'Exit Node réussie il y a ${o_age} h"
+    else ko "copie sur l'Exit Node absente ou en échec (âge : ${o_age:-?} h)"; fix "./deploy/backup/backup.sh (étape 5/5)"; fi
+  else
+    info "copie sur l'Exit Node : non configurée"
+  fi
+  if [[ "$r_ok" == true && "${r_age:--1}" -ge 0 && "$r_age" -le 192 ]]; then ok "test de restauration réussi il y a ${r_age} h"
+  else ko "aucun test de restauration réussi depuis 8 jours (état : ${r_ok:-?})"; fix "./deploy/backup/backup.sh --test-restore"; fi
+  if systemctl is-active --quiet akwaba-backup.timer 2>/dev/null; then ok "minuteur akwaba-backup.timer actif"
+  else ko "minuteur akwaba-backup.timer inactif"; fix "sudo systemctl enable --now akwaba-backup.timer"; fi
+fi
+
 echo
 echo "Vérifications globales : $PASS OK, $FAILS échec(s)."
 (( rc11a == 0 )) && echo "Lot 11a : OK" || echo "Lot 11a : échec(s) — voir plus haut."

@@ -1,0 +1,15 @@
+# AKWABA — rotation des archives reçues sur l'Exit Node (Phase 14a). Installé par setup-exit-node.sh.
+[Unit]
+Description=Akwaba - rotation des sauvegardes reçues (7 jours, 4 semaines, 6 mois)
+
+[Service]
+Type=oneshot
+User=akwaba-backup
+Group=akwaba-backup
+ExecStart=/usr/bin/python3 /usr/local/lib/akwaba-backup/retention.py /var/lib/akwaba-backup/archives --apply
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/akwaba-backup/archives
+ProtectHome=yes
+MemoryMax=64M

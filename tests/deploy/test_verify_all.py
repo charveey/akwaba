@@ -117,6 +117,8 @@ def env(tmp_path, web):
     fake = bindir / "docker"
     fake.write_text(FAKE_DOCKER)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    (bindir / "systemctl").write_text('#!/bin/sh\n[ "${FAKE_TIMER:-active}" = active ]\n')   # is-active --quiet
+    (bindir / "systemctl").chmod(0o755)
     v11a = tmp_path / "verify-11a.sh"
     v11a.write_text("#!/bin/sh\necho 'Résultat : 21 OK, 0 échec(s).'\nexit ${FAKE_11A_RC:-0}\n")
     v11a.chmod(0o755)
@@ -259,3 +261,63 @@ def test_strictly_read_only(env):
                       "alembic upgrade", "alembic downgrade", "alembic stamp", "tailscale serve --", "UPDATE ", "DELETE ",
                       "INSERT ", "chmod 600 .env"):
         assert not any(forbidden in ln for ln in code_lines), forbidden
+
+
+# ------------------------------------------------------------------ Phase 14a : sauvegardes
+
+def _backups(env, *, backup_h=2, backup_ok=True, offsite_h=2, offsite_ok=True, restore_h=30, restore_ok=True,
+             offsite=True):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    at = lambda h: (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+    config = env["repo"] / "backups" / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "age-recipients.txt").write_text("age1" + "q" * 58 + "\n")
+    if offsite:
+        (config / "offsite.conf").write_text("OFFSITE_HOST=pi\nOFFSITE_USER=akwaba-backup\n")
+    auto = env["repo"] / "backups" / "auto"
+    auto.mkdir(parents=True, exist_ok=True)
+    (auto / "status.json").write_text(json.dumps({
+        "backup": {"at": at(backup_h), "ok": backup_ok}, "offsite": {"at": at(offsite_h), "ok": offsite_ok},
+        "restore_test": {"at": at(restore_h), "ok": restore_ok}}))
+
+
+def test_backups_not_configured_only_warn(env):
+    rc, out = run(env)
+    assert rc == 0 and "sauvegardes automatiques non configurées" in out and failures(out) == []
+
+
+def test_fresh_backups_pass(env):
+    _backups(env)
+    rc, out = run(env)
+    assert rc == 0, out
+    for line in ("dernière sauvegarde chiffrée réussie il y a 2 h", "copie sur l'Exit Node réussie il y a 2 h",
+                 "test de restauration réussi il y a 30 h", "minuteur akwaba-backup.timer actif"):
+        assert line in out, line
+    assert "Vérifications globales : 16 OK, 0 échec(s)." in out
+
+
+@pytest.mark.parametrize("kw,expected", [
+    ({"backup_h": 30}, "aucune sauvegarde réussie depuis 26 h"),
+    ({"backup_ok": False}, "aucune sauvegarde réussie depuis 26 h"),
+    ({"offsite_ok": False}, "copie sur l'Exit Node absente ou en échec"),
+    ({"offsite_h": 50}, "copie sur l'Exit Node absente ou en échec"),
+    ({"restore_h": 200}, "aucun test de restauration réussi depuis 8 jours"),
+    ({"restore_ok": False}, "aucun test de restauration réussi depuis 8 jours"),
+])
+def test_stale_or_failed_backups_fail(env, kw, expected):
+    _backups(env, **kw)
+    rc, out = run(env)
+    assert rc == 1 and any(expected in f for f in failures(out)), out
+
+
+def test_inactive_timer_fails(env):
+    _backups(env)
+    rc, out = run(env, FAKE_TIMER="inactive")
+    assert rc == 1 and any("akwaba-backup.timer inactif" in f for f in failures(out))
+
+
+def test_offsite_not_configured_is_only_reported(env):
+    _backups(env, offsite=False, offsite_ok=False)
+    rc, out = run(env)
+    assert rc == 0 and "copie sur l'Exit Node : non configurée" in out
