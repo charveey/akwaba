@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# HISTORIQUE (Phase 13b) : utiliser désormais ./deploy/deploy.sh, procédure standard pour tout déploiement.
 # AKWABA — Phase 11c : identités, quarantaine, exemptions, décisions simulées.
 #
 #     ./deploy/deploy-11c.sh --check   # LECTURE SEULE : exemptions concernées par la nouvelle règle
