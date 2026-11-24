@@ -279,6 +279,27 @@ En cas d'échec, le script s'arrête et affiche le retour arrière (image `prece
 sauvegarde à restaurer si une migration a été appliquée). Il ne lance jamais `docker compose down`, ne
 supprime ni volume ni image, ne touche ni à Tailscale (443/8443), ni au port 8000, ni à `.env`.
 Les scripts `deploy-11b/11c/11d.sh` sont conservés pour l'historique.
+## Mise à jour de l'agent sur l'Exit Node (Phase 13c)
+
+Sur l'Exit Node, avec le code du dépôt (`git pull` sur l'Exit Node, ou `scp -r agent/akwaba_agent pi:/tmp/`) :
+
+```bash
+sudo sh deploy/agent/update.sh /chemin/vers/akwaba_agent --plan   # vérifications + ping, rien n'est modifié
+sudo sh deploy/agent/update.sh /chemin/vers/akwaba_agent
+```
+
+1. Vérifications : agent déjà installé (sinon `install.sh`), nouveau code complet et compilable par
+   `/usr/bin/python3` ; code identique → rien à faire.
+2. **Ping signé avec le NOUVEAU code** (copie temporaire, utilisateur `akwaba-agent`, `agent.ini` et secret
+   réels) : configuration illisible ou refus du backend → **rien n'est modifié**.
+3. Bascule : code actuel conservé dans `/opt/akwaba-agent/precedent`, nouveau code installé (root, lecture seule).
+4. `systemctl restart akwaba-agent`, puis contrôle : service actif, aucun redémarrage spontané, aucune
+   trace d'erreur dans le journal, nouveau ping. **En cas d'échec, retour automatique** au code précédent
+   (le code refusé est gardé dans `/opt/akwaba-agent/echec` pour analyse).
+
+Le script ne modifie jamais `agent.ini`, le secret, la règle sudoers, l'unité systemd (il signale seulement
+une différence avec celle du dépôt), le spool ni la collecte. Les lots produits pendant le redémarrage restent
+dans le spool et partent au retour. Côté serveur, `./deploy/verify-all.sh` confirme la réception (« Agent et HMAC »).
 
 ## Déploiement du lot 13a (images figées, durcissement, journaux bornés)
 
