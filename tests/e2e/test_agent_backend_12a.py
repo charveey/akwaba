@@ -360,6 +360,34 @@ def test_backend_outage_is_absorbed_by_the_spool(stack, fake_host, agent):
     assert any(d and d.get("send_failures", 0) > 0 for d in details), "les échecs d'envoi doivent remonter"
 
 
+KNOWN_REPLAY_LIMITATION = (
+    "Limitation connue (issue #5) : les nonces HMAC sont gardés en mémoire ; après un redémarrage du "
+    "backend, un rejeu est accepté tant que l'horodatage reste dans la fenêtre de 120 s.")
+
+
+def test_known_limitation_replay_after_backend_restart(stack):
+    """Rejeu de la MÊME requête signée avant et après un redémarrage du backend.
+
+    Les étapes préalables sont de vraies assertions. Seul le résultat final est déclaré « échec attendu »
+    (xfail) tant que l'issue #5 n'est pas corrigée : il ne fait pas échouer la suite. Une fois la
+    correction livrée, le rejeu renverra 401 et ce test passera sans modification.
+    """
+    res = _cli(stack, "create-agent", "--name", "exit-e2e-12a-rejeu", "--ip", "100.85.214.6")
+    assert res.returncode == 0, res.stderr
+    probe = {"key_id": re.search(r"key_id = (agt_[0-9a-f]{16})", res.stderr).group(1),
+             "secret": res.stdout.strip(), "url": f"http://127.0.0.1:{stack['backend_port']}"}
+    nonce, now = "a" * 32, time.time()                   # en-têtes identiques à chaque envoi
+    assert signed_post(probe, "/api/agent/ping", b"{}", now=now, nonce=nonce).status == 200
+    assert signed_post(probe, "/api/agent/ping", b"{}", now=now, nonce=nonce).status == 401
+    stack["backend"].stop()
+    stack["backend"].start()
+    assert time.time() - now < 100, "le redémarrage doit rester dans la fenêtre de validité"
+    status = signed_post(probe, "/api/agent/ping", b"{}", now=now, nonce=nonce).status
+    if status == 200:
+        pytest.xfail(KNOWN_REPLAY_LIMITATION)
+    assert status == 401
+
+
 def test_a_revoked_credential_is_refused_and_rotation_restores_service(stack, fake_host, agent):
     assert _cli(stack, "revoke-agent", "--key-id", agent["key_id"]).returncode == 0
     res = run_agent(fake_host, agent, "--ping")

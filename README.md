@@ -87,8 +87,13 @@ Routage par fragment (`#/membres`), thème clair par défaut et thème sombre, r
 
 - AKWABA n'ajoute aucun port public : accès uniquement via le tailnet.
   (L'application Next.js voisine, elle, est exposée via Tailscale Funnel sur 443 : hors périmètre AKWABA, jamais modifiée.)
-- Agent → backend (`:8000`, direct) : HMAC-SHA256 par requête, tolérance ±300 s, anti-rejeu (`batch_id`),
-  credential individuel, secrets chiffrés en base.
+- Agent → backend (`:8000`, direct) : HMAC-SHA256 par requête, tolérance d'horloge ±120 s, nonce à usage
+  unique, idempotence des lots (`batch_id`), credential individuel, secrets chiffrés en base.
+- **Limitation connue (anti-rejeu)** : les nonces déjà vus sont conservés **en mémoire** par le processus
+  backend. Après un redémarrage du backend, une requête signée déjà acceptée peut être rejouée une fois tant
+  que son horodatage reste dans la fenêtre de validité (±120 s). Impact limité : un lot rejoué est ignoré
+  (`batch_id`), un heartbeat rejoué peut réenregistrer un état ancien. Reproduit par `test_known_limitation_replay_after_backend_restart` (résultat `xfail`) ;
+  correction suivie dans l'issue #5 (persistance atomique des nonces en base).
 - `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + limite de taille
   (l'IP seule n'authentifie jamais). **Jamais servi par Nginx** (404).
 - Admin : HTTPS via `tailscale serve --https=8443`, cookie `HttpOnly` / `Secure` / `SameSite=Strict`
