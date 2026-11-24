@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import client_ip, get_clock, require_admin, require_csrf
 from app.db.session import get_db
 from app.domain.clock import Clock
-from app.schemas.members import IdentityIn, IdentityOut, MemberIn, MemberOut, MemberPage, member_out
+from app.schemas.members import IdentityIn, IdentityOut, MemberIn, MemberOut, MemberPage, ReassignIn, member_out
 from app.services import members as svc
 from app.services.auth import AuthContext
 
@@ -81,4 +81,15 @@ def unlink(
 ) -> IdentityOut:
     return IdentityOut.model_validate(
         svc.unlink_identity(db, ctx, clock, member_id, identity_id, client_ip(request))
+    )
+
+
+@router.post("/{member_id}/identities/{identity_id}/reassign", response_model=IdentityOut)
+def reassign(
+    member_id: uuid.UUID, identity_id: uuid.UUID, body: ReassignIn, request: Request,
+    ctx: AuthContext = Depends(require_csrf), db: Session = Depends(get_db), clock: Clock = Depends(get_clock),
+) -> IdentityOut:
+    """Lot 11c : réaffectation atomique d'un login Tailscale vers un autre membre."""
+    return IdentityOut.model_validate(
+        svc.reassign_identity(db, ctx, clock, member_id, identity_id, body.target_member_id, client_ip(request))
     )

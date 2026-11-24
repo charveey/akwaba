@@ -170,6 +170,61 @@ def unlink_identity(
     return ident
 
 
+def reassign_identity(
+    db: Session, ctx: AuthContext, clock: Clock, member_id: uuid.UUID, identity_id: uuid.UUID,
+    target_member_id: uuid.UUID, ip: str | None,
+) -> ClientIdentity:
+    """Lot 11c : réaffecte un login Tailscale d'un membre à un autre, en UNE transaction.
+
+    Détache l'ancienne liaison et crée la nouvelle (l'historique des liaisons est conservé),
+    avec un unique événement d'audit « identity.reassigned ». Toute erreur annule l'ensemble.
+    """
+    if target_member_id == member_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Le membre cible est déjà celui de cette identité")
+    # Verrous dans un ordre stable (identifiants croissants) : pas d'interblocage entre deux réaffectations.
+    locked = {}
+    for mid in sorted((member_id, target_member_id), key=str):
+        locked[mid] = db.execute(select(Member).where(Member.id == mid).with_for_update()).scalar_one_or_none()
+    source, target = locked[member_id], locked[target_member_id]
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Membre source introuvable")
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Membre cible introuvable")
+    if target.archived_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Membre cible archivé : réaffectation impossible")
+    old = db.execute(
+        select(ClientIdentity).where(ClientIdentity.id == identity_id).with_for_update()
+    ).scalar_one_or_none()
+    if old is None or old.member_id != member_id:
+        db.rollback()
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Identité introuvable pour ce membre")
+    if not old.is_active:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Identité déjà déliée : utiliser un rattachement simple")
+    now = clock.now()
+    try:
+        old.is_active = False
+        old.unlinked_at = now
+        db.flush()
+        new = ClientIdentity(member_id=target.id, provider=old.provider, login_name=old.login_name, linked_at=now)
+        db.add(new)
+        db.flush()  # l'index unique partiel (un login actif = un membre) tranche toute incohérence
+        record(db, "identity.reassigned", actor_admin_id=ctx.admin.id, entity_type="client_identity",
+               entity_id=new.id, ip=ip, details={
+                   "login_name": old.login_name,
+                   "from_member_id": str(source.id), "to_member_id": str(target.id),
+                   "from_client_identity_id": str(old.id), "to_client_identity_id": str(new.id),
+               })
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Réaffectation impossible : association incohérente")
+    except Exception:
+        db.rollback()
+        raise
+    return new
+
+
 # ---------------------------------------------------------------- Phase 11b : vue d'ensemble (lecture)
 
 MEMBER_SORTS = ("-created", "created", "name", "-name", "expiry", "-expiry")

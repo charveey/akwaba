@@ -68,8 +68,8 @@ def stack(tmp_path_factory):
         "FIELD_ENCRYPTION_KEY": "A" * 43 + "=",
         "ALLOWED_ORIGINS": tls_origin,
     }
-    for k, v in tls_origin_env.items():
-        os.environ.setdefault(k, v)   # app.core.security et alembic chargent la configuration
+    for k, v in {**tls_origin_env, "DATABASE_URL": URL}.items():
+        os.environ.setdefault(k, v)   # le code du backend importé par les tests charge la configuration
     env = {**os.environ, **tls_origin_env, "DATABASE_URL": URL, "PYTHONPATH": str(BACKEND)}
     subprocess.run(["alembic", "downgrade", "base"], cwd=BACKEND, env=env, check=True, capture_output=True)
     subprocess.run(["alembic", "upgrade", "head"], cwd=BACKEND, env=env, check=True, capture_output=True)

@@ -93,6 +93,11 @@ class IdentityIn(BaseModel):
         return v
 
 
+class ReassignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_member_id: uuid.UUID
+
+
 class IdentityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -126,3 +126,16 @@ test("le JavaScript ne calcule aucune échéance (le backend est la source de v�
     assert.doesNotMatch(src, /86400000|864e5/, relative(ROOT, file));
   }
 });
+
+test("lot 11c : aucune action réseau depuis l'interface (aucun appel hors /api, jamais /api/agent)", () => {
+  for (const file of js) {
+    const src = stripComments(read(file));
+    for (const m of src.matchAll(/api\(\s*[`"']([^`"']+)/g)) {
+      assert.match(m[1], /^\/api\//, `${relative(ROOT, file)} : ${m[1]}`);
+      assert.doesNotMatch(m[1], /^\/api\/agent/, relative(ROOT, file));
+    }
+    if (!file.endsWith(join("js", "api.js"))) {
+      assert.doesNotMatch(src, /\bfetch\(/, `${relative(ROOT, file)} : fetch direct interdit (passer par api())`);
+    }
+  }
+});

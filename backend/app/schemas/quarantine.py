@@ -32,6 +32,14 @@ class QuarantineOut(BaseModel):
     resolution_note: Optional[str]
     simulated_block: bool
     exempt: bool
+    # Lot 11c (lecture, calculés par le backend à evaluated_at)
+    current_verdict: Optional[str] = None
+    current_reason: Optional[str] = None
+    last_confirmed_activity_at: Optional[datetime] = None
+    remaining_seconds: Optional[int] = None      # PENDING uniquement : délai avant blocage SIMULÉ
+    suppressed_until: Optional[datetime] = None  # DISMISSED : aucune réouverture avant cette date (exclue)
+    reopen_possible: Optional[bool] = None       # DISMISSED : borne atteinte (réouverture à la borne exacte)
+    resolved_by_email: Optional[str] = None
 
 
 class QuarantinePage(BaseModel):
@@ -40,6 +48,7 @@ class QuarantinePage(BaseModel):
     counts: Dict[str, int]
     limit: int
     offset: int
+    evaluated_at: Optional[datetime] = None
 
 
 class DecisionOut(BaseModel):
@@ -64,6 +73,7 @@ class DecisionPage(BaseModel):
 class QuarantineDetail(BaseModel):
     record: QuarantineOut
     decisions: List[DecisionOut]
+    evaluated_at: Optional[datetime] = None
 
 
 class ExemptionOut(BaseModel):
@@ -76,6 +86,10 @@ class ExemptionOut(BaseModel):
     ended_at: Optional[datetime]
     ended_by_admin_id: Optional[uuid.UUID]
     active: bool
+    # Lot 11c : motif = note de résolution du dossier autorisé ; e-mails des administrateurs.
+    reason: Optional[str] = None
+    granted_by_email: Optional[str] = None
+    ended_by_email: Optional[str] = None
 
 
 class ExemptionPage(BaseModel):

@@ -179,6 +179,28 @@ Migration `0011` : renomme uniquement les noms affichés des formules (1 mois �
 6 mois → Gold, 12 mois → Diamond ; Platinum inchangé). Un nom modifié à la main n'est jamais écrasé.
 Retour arrière : `./deploy/deploy-11b.sh --rollback`.
 
+## Déploiement du lot 11c (identités, quarantaine, exemptions, décisions simulées)
+
+```bash
+git fetch origin && git checkout phase-11c-identites-quarantaine
+./deploy/deploy-11c.sh --check   # LECTURE SEULE : exemptions concernées par la nouvelle règle
+./deploy/deploy-11c.sh           # pg_dump, build backend, vérifications (aucune migration)
+./deploy/verify-11a.sh
+```
+
+**Règle de sécurité modifiée (validée)** : une exemption ne couvre plus que `UNKNOWN_IDENTITY`, jamais
+`EXPIRED_CANDIDATE`. Une identité autorisée dont le membre a un abonnement expiré est de nouveau évaluée :
+dossier PENDING dès qu'elle est active (au prochain passage du réconciliateur, s'il est activé), puis
+`WOULD_BLOCK` **simulé** après 24 h sans décision. Les exemptions existantes ne sont ni supprimées ni
+terminées.
+
+Signaux d'ambiguïté (informatifs, sans aucun effet automatique) : `ARCHIVED_MEMBER_LOGIN`,
+`CONTACT_EMAIL_MATCH`, `MULTIPLE_EXIT_NODES` (Exit Nodes distincts sur les observations conservées,
+soit `RETENTION_OBSERVATIONS_DAYS`, 90 jours par défaut).
+
+Réaffectation atomique d'une identité : `POST /api/members/{id}/identities/{identity_id}/reassign`
+(une transaction, audit `identity.reassigned`).
+
 ## Tests
 
 ```bash

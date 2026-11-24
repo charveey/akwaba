@@ -17,6 +17,11 @@ const PAGES = {
   "/membres/:id": () => import("./pages/member-detail.js"),
   "/abonnements": () => import("./pages/subscriptions.js"),
   "/paiements": () => import("./pages/payments.js"),
+  "/identites": () => import("./pages/identities.js"),
+  "/identites/:id": () => import("./pages/identity-detail.js"),
+  "/quarantaine": () => import("./pages/quarantine.js"),
+  "/quarantaine/:id": () => import("./pages/quarantine-detail.js"),
+  "/exemptions": () => import("./pages/exemptions.js"),
   "/parametres": () => import("./pages/settings.js"),
 };
 const placeholder = () => import("./pages/placeholder.js");

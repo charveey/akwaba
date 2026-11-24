@@ -349,11 +349,10 @@ def test_authorizing_resolves_the_record_and_creates_an_exemption_that_stops_new
     assert len(records(ag, lg)) == 1                           # l'exemption empêche tout nouveau dossier
 
 
-def test_an_exemption_also_covers_an_expired_member_and_ending_it_restores_the_normal_rules(ag):
+def test_an_authorized_identity_whose_member_expires_is_evaluated_again_and_keeps_its_exemption(ag):
+    """Lot 11c : l'exemption ne couvre que UNKNOWN_IDENTITY, jamais EXPIRED_CANDIDATE."""
     lg = login()
-    member_with(ag, lg)                                         # abonnement payé aujourd'hui
-    ag.clk[0] = NOW + timedelta(days=40)                        # expiré, grâce terminée
-    ingest(ag, [obs(lg)])
+    ingest(ag, [obs(lg)])                                       # identité inconnue active
     run(ag)
     [(status, *_rest, rid)] = records(ag, lg)
     assert status == "PENDING"
@@ -361,13 +360,25 @@ def test_an_exemption_also_covers_an_expired_member_and_ending_it_restores_the_n
         svc.resolve_record(db, record_id=rid, action="AUTHORIZE", admin_id=ag.admin_id, now=ag.clk[0])
     ingest(ag, [obs(lg)])
     run(ag)
-    assert len(records(ag, lg)) == 1
-    [(eid,)] = rows(ag, "SELECT id FROM identity_exemptions WHERE exit_node_identity_id = :i", i=identity_id(ag, lg))
-    with ag.maker() as db:
-        svc.end_exemption(db, exemption_id=eid, admin_id=ag.admin_id, now=ag.clk[0])
+    assert statuses(ag, lg) == ["AUTHORIZED"]                   # toujours inconnue : couverte
+    member_with(ag, lg)                                         # rattachée, abonnement payé aujourd'hui
+    ag.clk[0] = NOW + timedelta(days=40)                        # expiré, grâce terminée
+    heartbeat(ag, ag.clk[0])
     ingest(ag, [obs(lg)])
     run(ag)
-    assert sorted(statuses(ag, lg)) == ["AUTHORIZED", "PENDING"]
+    assert sorted(statuses(ag, lg)) == ["AUTHORIZED", "PENDING"]   # de nouveau évaluée
+    ag.clk[0] = NOW + timedelta(days=41)
+    heartbeat(ag, ag.clk[0])
+    run(ag)
+    assert sorted(statuses(ag, lg)) == ["AUTHORIZED", "EXPIRED"]
+    assert [d[0] for d in decisions(ag, lg)] == ["WOULD_BLOCK"]
+    assert all(d[1] == "dry_run" and d[2] is False for d in decisions(ag, lg))
+    # L'exemption n'est ni supprimée ni terminée automatiquement : elle reste active et historisée.
+    [(eid, ended)] = rows(ag, "SELECT id, ended_at FROM identity_exemptions WHERE exit_node_identity_id = :i",
+                          i=identity_id(ag, lg))
+    assert ended is None
+    with ag.maker() as db:
+        svc.end_exemption(db, exemption_id=eid, admin_id=ag.admin_id, now=ag.clk[0])
     audit = rows(ag, "SELECT action, actor_admin_id FROM audit_logs WHERE entity_id = :e", e=str(eid))
     assert audit == [("identity_exemption.ended", ag.admin_id)]
 

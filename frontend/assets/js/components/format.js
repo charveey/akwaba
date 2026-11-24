@@ -69,3 +69,12 @@ export function localDay(value) {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("fr-FR");
 }
+
+/** Durée en secondes (fournie par le serveur) → "23 h 05 min". */
+export function remaining(seconds) {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds <= 0) return "Délai écoulé";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h ? `${h} h ${String(m).padStart(2, "0")} min` : `${m} min`;
+}

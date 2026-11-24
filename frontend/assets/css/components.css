@@ -509,3 +509,17 @@ fieldset.field {
   .toolbar__filters input[type="search"] { min-width: 0; width: 100%; }
   .pagination { flex-direction: column; align-items: stretch; }
 }
+
+/* --- Lot 11c ---------------------------------------------------------------- */
+.chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.chip {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2); border: 1px solid var(--c-border); border-radius: 999px;
+  background: var(--c-surface); font-size: var(--fs-sm);
+}
+.stacked { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.stacked small { color: var(--c-text-muted); font-size: var(--fs-xs); }
+.simulation-banner { font-weight: 600; }
+details summary { cursor: pointer; font-weight: 600; margin-top: var(--sp-2); }
+.alert ul { margin: var(--sp-2) 0; padding-left: var(--sp-5); }
+.alert p:last-child { margin-bottom: 0; }

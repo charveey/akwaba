@@ -70,9 +70,11 @@ def test_no_record_is_opened(over, reason):
     assert (t.kind, t.reason) == (NONE, reason)
 
 
-def test_the_exemption_covers_unauthorized_verdicts_but_never_a_review():
+def test_the_exemption_covers_only_an_unknown_identity():
     assert step(exempt=True, status_verdict=V.UNKNOWN_IDENTITY).kind == NONE
-    assert step(exempt=True, status_verdict=V.EXPIRED_CANDIDATE).kind == NONE
+    # Lot 11c : une identité autorisée dont l'abonnement a expiré est évaluée normalement.
+    expired = step(exempt=True, status_verdict=V.EXPIRED_CANDIDATE)
+    assert (expired.kind, expired.new_status, expired.reason) == (OPEN, "PENDING", "unauthorized_active")
     assert step(exempt=True, status_verdict=V.MANUAL_REVIEW).kind == OPEN
 
 

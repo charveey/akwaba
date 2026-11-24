@@ -133,7 +133,10 @@ def _without_record(now: datetime, active_now: bool, verdict: Verdict, exempt: b
         return _none("clean")
     if not active_now:
         return _none("inactive")
-    if exempt and verdict in _UNAUTHORIZED:
+    # Une exemption (autorisation explicite d'un administrateur) ne couvre QUE l'identité inconnue.
+    # Une identité dont l'abonnement du membre a expiré (EXPIRED_CANDIDATE) est toujours évaluée
+    # normalement, même si elle a été autorisée auparavant (règle de sécurité, lot 11c).
+    if exempt and verdict is Verdict.UNKNOWN_IDENTITY:
         return _none("exempt")
     if suppressed is not None and now < suppressed:
         return _none("dismissed_recently")
