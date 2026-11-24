@@ -232,4 +232,5 @@ cd backend && python3 -m pytest                              # unitaires (+ int�
 cd frontend && node --test tests/*.test.mjs                  # Node >= 22, aucune dépendance
 python3 -m pytest tests/nginx tests/deploy                   # Nginx réel + invariants Compose / scripts
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e            # Chrome headless → TLS → Nginx → backend → PostgreSQL
+TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_agent_backend_12a.py   # agent réel → HMAC → backend (Phase 12a)
 ```

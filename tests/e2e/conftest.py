@@ -1,8 +1,11 @@
-"""Pile de bout en bout partagée (lots 11a, 11b) :
+"""Pile de bout en bout partagée (lots 11a à 11d, Phase 12) :
 
     Chrome ──HTTPS──► terminaison TLS (simule tailscale serve :8443, ajoute X-Forwarded-For)
            ──HTTP──► Nginx (configuration deploy/nginx réelle)
            ──HTTP──► backend FastAPI (uvicorn, vrai code) ──► PostgreSQL (migrations Alembic)
+
+Lot 12a : l'agent réel se connecte en direct au backend (port exposé par `stack["backend_port"]`,
+comme 8000 en production) ; `stack["backend"]` peut être arrêté puis redémarré sur le même port.
 
 Prérequis (sinon tests ignorés) : TEST_DATABASE_URL, nginx, google-chrome (ou chromium), node >= 22, openssl.
 """
@@ -53,6 +56,44 @@ def wait_port(port: int, timeout: float = 20) -> None:
     raise RuntimeError(f"port {port} injoignable")
 
 
+class Backend:
+    """Backend uvicorn réel, arrêtable et redémarrable sur le même port (lot 12a : coupure réseau de l'agent)."""
+
+    def __init__(self, env, port, log):
+        self.env, self.port, self.log, self.proc = env, port, log, None
+
+    def start(self):
+        assert self.proc is None or self.proc.poll() is not None, "backend déjà démarré"
+        self.proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(self.port)],
+            cwd=BACKEND, env=self.env, stdout=open(self.log, "a"), stderr=subprocess.STDOUT)
+        wait_port(self.port)
+        return self
+
+    def stop(self):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.send_signal(signal.SIGTERM)
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+        end = time.time() + 10
+        while time.time() < end:          # le port doit être réellement libéré
+            try:
+                socket.create_connection(("127.0.0.1", self.port), timeout=0.2).close()
+                time.sleep(0.1)
+            except OSError:
+                return
+
+    # Interface minimale de subprocess.Popen pour le nettoyage de la fixture.
+    def send_signal(self, _sig):
+        self.stop()
+
+    def wait(self, timeout=None):
+        return 0
+
+
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory):
     from sqlalchemy import create_engine, text
@@ -85,10 +126,12 @@ def stack(tmp_path_factory):
         "TRUSTED_PROXY_IPS": "127.0.0.1",      # = l'IP fixe de Nginx en production
         "COOKIE_SECURE": "true",
         "LOG_LEVEL": "WARNING",
+        # L'agent de test se connecte en direct depuis 127.0.0.1 (en production : l'IP tailnet de l'Exit Node).
+        "AGENT_ALLOWED_IPS": "127.0.0.1/32",
     }
-    procs.append(subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(backend_port)],
-        cwd=BACKEND, env=backend_env, stdout=open(work / "backend.log", "w"), stderr=subprocess.STDOUT))
+    backend = Backend(backend_env, backend_port, work / "backend.log")
+    backend.start()
+    procs.append(backend)
 
     # Nginx : configuration livrée + un serveur TLS qui joue le rôle de tailscale serve.
     conf, tmp = work / "etc", work / "tmp"
@@ -124,7 +167,7 @@ server {{
         f"include {conf}/conf.d/akwaba.conf;", f"include {conf}/conf.d/*.conf;"))
     procs.append(subprocess.Popen([NGINX, "-p", str(work), "-c", str(main_conf), "-e", str(tmp / "error.log"),
                                    "-g", "daemon off;"]))
-    for p in (backend_port, nginx_port, tls_port):
+    for p in (nginx_port, tls_port):
         wait_port(p)
 
     # Chrome headless.
@@ -144,7 +187,8 @@ server {{
     assert devtools_port, "Chrome n'a pas démarré"
 
     yield {"engine": engine, "email": email, "password": password, "base": tls_origin,
-           "devtools": devtools_port, "work": work, "tmp": tmp}
+           "devtools": devtools_port, "work": work, "tmp": tmp,
+           "backend": backend, "backend_port": backend_port, "nginx_port": nginx_port, "env": env}
 
     for p in reversed(procs):
         p.send_signal(signal.SIGTERM if p is not procs[1] else signal.SIGQUIT)
