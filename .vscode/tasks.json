@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Akwaba : tous les tests",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : tests rapides (sans bout en bout)",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run-all.sh",
+      "args": ["--rapide"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : tests du fichier courant",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run.sh",
+      "args": ["${file}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : test sélectionné (nom du test ou de la classe)",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run.sh",
+      "args": ["${file}", "-k", "${selectedText}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : tests frontend",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run.sh",
+      "args": ["${workspaceFolder}/frontend"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : base de test — démarrer",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/test-db.sh",
+      "args": ["up"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : base de test — arrêter",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/test-db.sh",
+      "args": ["down"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

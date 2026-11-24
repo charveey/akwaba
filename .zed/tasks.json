@@ -1,0 +1,43 @@
+[
+  {
+    "label": "Akwaba : test sous le curseur",
+    "command": "tests/run.sh",
+    "args": ["$ZED_FILE", "-k", "${ZED_SYMBOL:}"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["python-pytest-method", "python-pytest-class"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Akwaba : tests du fichier courant",
+    "command": "tests/run.sh",
+    "args": ["$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["js-test"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Akwaba : tous les tests",
+    "command": "tests/run.sh",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Akwaba : tests rapides (sans bout en bout)",
+    "command": "tests/run-all.sh",
+    "args": ["--rapide"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Akwaba : base de test — démarrer",
+    "command": "tests/test-db.sh",
+    "args": ["up"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Akwaba : base de test — arrêter",
+    "command": "tests/test-db.sh",
+    "args": ["down"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  }
+]

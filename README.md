@@ -352,6 +352,30 @@ docker compose up -d                  # recrée postgres, backend et web (config
 ./deploy/verify-all.sh                # reprend verify-11a.sh
 ```
 
+## Développement : tests depuis Zed et VS Code
+
+Une seule fois sur le poste : un environnement Python et une base de test jetable (Docker).
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.lock            # versions figées, avec empreintes
+.venv/bin/pip install "pytest>=8" "httpx>=0.27" packaging      # outils de test (commande séparée)
+tests/test-db.sh up       # PostgreSQL 16 de test sur 127.0.0.1:5433 (en mémoire) + écrit .env.test
+```
+
+- **Zed** : ouvrir le dossier du dépôt. Les boutons ▶ dans la marge des tests Python et JavaScript lancent
+  le test sous le curseur (ou le fichier) dans le bon répertoire. Palette `task: spawn` → « Akwaba : … »
+  (tous les tests, tests rapides, fichier courant, base de test).
+- **VS Code** : ouvrir **`akwaba.code-workspace`** (pas le dossier seul). Le panneau « Tests » découvre
+  backend, agent et infra/bout en bout, chacun dans son répertoire, avec `.env.test` ; ▶ et 🐞 par test.
+  Tâches : `Terminal › Run Task` → « Akwaba : … » ; `Run Test Task` lance tous les tests.
+- **Ligne de commande** : `tests/run.sh [fichier] [-k test]` choisit le bon lanceur (`--plan` pour voir
+  la commande) ; `tests/run.sh` seul lance les quatre suites.
+
+`.env.test` ne contient que l'URL de la base de test et n'est jamais commité ; `.env` (production) n'est
+jamais lu par les tests. Sans base de test, les tests PostgreSQL sont simplement ignorés. Les tests de
+bout en bout demandent en plus Nginx et Chrome/Chromium ; les tests de sauvegarde réels demandent root.
+
 ## Tests
 
 ```bash
