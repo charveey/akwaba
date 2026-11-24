@@ -4,7 +4,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import agent, auth, billing, finance, health, identities, members, protected, quarantine, reminders, reports
+from app.api import (
+    agent, auth, billing, dashboard, exit_nodes, finance, health, identities, members, protected, quarantine,
+    reminders, reports,
+)
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.core.origin import OriginCheckMiddleware
@@ -62,6 +65,8 @@ def create_app() -> FastAPI:
     app.include_router(quarantine.quarantine_router, prefix="/api")
     app.include_router(quarantine.decisions_router, prefix="/api")
     app.include_router(quarantine.exemptions_router, prefix="/api")
+    app.include_router(dashboard.router, prefix="/api")
+    app.include_router(exit_nodes.router, prefix="/api")
     return app
 
 

@@ -52,6 +52,9 @@ class AuditEntry(BaseModel):
     entity_id: str | None
     details: Any | None
     ip_address: str | None
+    # Lot 11d : acteur normalisé à la LECTURE (l'historique append-only n'est jamais réécrit)
+    actor_display: str | None = None
+    actor_kind: str | None = None    # admin | attempt | system | cli | anonymous | unknown
 
 
 class AuditPage(BaseModel):

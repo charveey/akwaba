@@ -201,6 +201,30 @@ soit `RETENTION_OBSERVATIONS_DAYS`, 90 jours par défaut).
 Réaffectation atomique d'une identité : `POST /api/members/{id}/identities/{identity_id}/reassign`
 (une transaction, audit `identity.reassigned`).
 
+## Déploiement du lot 11d (vue d'ensemble, agent, dépenses, rapports, audit)
+
+```bash
+git fetch origin && git checkout phase-11d-dashboard-rapports
+./deploy/deploy-11d.sh           # pg_dump, build backend, vérifications (aucune migration)
+./deploy/verify-11a.sh
+```
+
+Nouveaux points d'accès (session administrateur requise, lecture seule sauf mention) :
+
+| Route | Rôle |
+|---|---|
+| `GET /api/dashboard` | 9 indicateurs et 5 séries calculés côté serveur |
+| `GET /api/exit-nodes`, `GET /api/exit-nodes/{id}` | diagnostic agent ; « sain » = règle du réconciliateur ; jamais de secret HMAC ni de `key_id` |
+| `GET /api/reports/operations` | instantané du jour + flux mensuels (UTC) |
+| `POST /api/expenses/{id}/correct` | correction atomique : annule l'ancienne (motif « Corrigée »), crée la nouvelle, audit `expense.corrected` |
+| `?format=csv` | dépenses et rapports financiers/opérationnels : `;`, UTF-8 avec BOM, mêmes filtres, toutes les lignes, formules neutralisées |
+
+Le graphique « Évolution des membres » montre les nouveaux membres par mois et le cumul des inscriptions
+(archivés compris) : ce n'est **pas** un historique du nombre de membres actifs. Le journal d'audit
+affiche l'acteur issu de la session (`actor_display`, `actor_kind`) ; les tentatives de connexion
+échouées ne sont jamais attribuées au compte visé ; les clés sensibles des détails sont masquées à la
+lecture, sans réécriture des événements.
+
 ## Tests
 
 ```bash
