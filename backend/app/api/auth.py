@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import COOKIE_NAME, require_admin, require_csrf
+from app.api.deps import COOKIE_NAME, client_ip, require_admin, require_csrf
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.services.auth import AuthContext, authenticate, revoke_session
@@ -21,22 +21,18 @@ class AdminInfo(BaseModel):
     csrf_token: str
 
 
-def _client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
-
-
 @router.post("/login", response_model=AdminInfo)
 def login(body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> AdminInfo:
     settings = get_settings()
     result = authenticate(
-        db, settings, body.email, body.password, _client_ip(request), request.headers.get("user-agent"),
+        db, settings, body.email, body.password, client_ip(request), request.headers.get("user-agent"),
     )
     if result is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Identifiants invalides")
     response.set_cookie(
         COOKIE_NAME, result.raw_token,
         max_age=settings.session_absolute_days * 86400,
-        httponly=True, secure=settings.cookie_secure, samesite="lax", path="/api",
+        httponly=True, secure=settings.cookie_secure, samesite="strict", path="/api",
     )
     response.headers["Cache-Control"] = "no-store"
     return AdminInfo(
@@ -48,9 +44,9 @@ def login(body: LoginRequest, request: Request, response: Response, db: Session 
 def logout(
     request: Request, response: Response, ctx: AuthContext = Depends(require_csrf), db: Session = Depends(get_db),
 ) -> None:
-    revoke_session(db, ctx, _client_ip(request))
+    revoke_session(db, ctx, client_ip(request))
     settings = get_settings()
-    response.delete_cookie(COOKIE_NAME, path="/api", httponly=True, secure=settings.cookie_secure, samesite="lax")
+    response.delete_cookie(COOKIE_NAME, path="/api", httponly=True, secure=settings.cookie_secure, samesite="strict")
 
 
 @router.get("/me", response_model=AdminInfo)

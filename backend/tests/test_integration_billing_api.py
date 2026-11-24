@@ -60,7 +60,7 @@ def api(engine):
 
     app = create_app()
     app.dependency_overrides[get_db] = override
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         email = f"{uuid.uuid4().hex[:10]}@example.test"
         with engine.begin() as conn:
             conn.execute(text("INSERT INTO admin_users (email, password_hash) VALUES (:e, :h)"), {"e": email, "h": HASH})
@@ -106,7 +106,7 @@ def audit_actions(engine, entity_id):
 
 def test_endpoints_require_authentication_and_csrf(engine, api):
     anon = create_app()
-    with TestClient(anon, base_url="https://testserver") as c:
+    with TestClient(anon, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         for path in ("/api/plans", "/api/payment-methods", "/api/subscriptions", "/api/payments"):
             assert c.get(path).status_code == 401
     assert api.c.post("/api/subscriptions", json={}).status_code == 403

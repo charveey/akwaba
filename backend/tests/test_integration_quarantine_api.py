@@ -71,7 +71,7 @@ def ag(engine):
         agent_admin.create_agent(db, name=name, ip="100.85.214.5", rotate=False, now=NOW)
     with engine.connect() as c:
         node_id = c.execute(text("SELECT id FROM exit_nodes WHERE name = :n"), {"n": name}).scalar_one()
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         email = f"{uuid.uuid4().hex[:10]}@example.test"
         with engine.begin() as conn:
             admin_id = conn.execute(
@@ -146,7 +146,7 @@ def blocked(ag):
 
 
 def test_every_route_requires_authentication_and_the_actions_require_csrf(engine, ag):
-    with TestClient(create_app(), base_url="https://testserver") as anon:
+    with TestClient(create_app(), base_url="https://testserver", headers={"Origin": "https://testserver"}) as anon:
         for path in (Q, f"{Q}/{uuid.uuid4()}", D, E):
             assert anon.get(path).status_code == 401, path
     for path in (f"{Q}/{uuid.uuid4()}/authorize", f"{Q}/{uuid.uuid4()}/dismiss", f"{E}/{uuid.uuid4()}/end"):

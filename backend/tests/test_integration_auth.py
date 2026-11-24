@@ -53,7 +53,7 @@ def client(engine):
     app = create_app()
     app.dependency_overrides[get_db] = override
     # https : le cookie est Secure, httpx ne l'enverrait pas en http.
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         yield c
 
 
@@ -76,7 +76,7 @@ def test_login_sets_secure_cookie_and_me_works(engine, client):
     r = login(client, email.upper())  # l'e-mail est insensible à la casse
     assert r.status_code == 200
     cookie = r.headers["set-cookie"].lower()
-    assert "httponly" in cookie and "secure" in cookie and "samesite=lax" in cookie
+    assert "httponly" in cookie and "secure" in cookie and "samesite=strict" in cookie
     assert r.json()["csrf_token"]
     me = client.get("/api/auth/me")
     assert me.status_code == 200 and me.json()["email"] == email

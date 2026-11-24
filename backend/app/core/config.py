@@ -9,6 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Clé Fernet : base64 URL-safe de 32 octets = 43 caractères + "=".
 _FERNET_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}=$")
+# Origine du navigateur : https://hôte[:port], rien d'autre.
+_ORIGIN_RE = re.compile(r"^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
 
 
 class Settings(BaseSettings):
@@ -57,6 +59,15 @@ class Settings(BaseSettings):
     # IP ou CIDR séparés par des virgules (ex. "100.85.214.5").
     agent_allowed_ips: str = ""
 
+    # Origines HTTPS autorisées pour les requêtes administratives mutatives
+    # (ex. "https://ubuntu.tail14614.ts.net:8443"). Obligatoire : sans elle,
+    # aucune requête mutative ne pourrait être acceptée.
+    allowed_origins: str
+
+    # IP exactes (pas de CIDR) dont on accepte X-Real-IP : uniquement Nginx.
+    # Vide = aucun proxy de confiance, l'IP TCP est toujours utilisée.
+    trusted_proxy_ips: str = ""
+
     @field_validator("database_url")
     @classmethod
     def _check_database_url(cls, v: str) -> str:
@@ -96,6 +107,39 @@ class Settings(BaseSettings):
             if raw:
                 ipaddress.ip_network(raw, strict=False)  # ValueError si invalide
         return v
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def _check_allowed_origins(cls, v: str) -> str:
+        items = [x.strip() for x in v.split(",") if x.strip()]
+        if not items:
+            raise ValueError("ALLOWED_ORIGINS doit contenir au moins une origine HTTPS")
+        for item in items:
+            if not _ORIGIN_RE.match(item):
+                raise ValueError(
+                    "ALLOWED_ORIGINS : chaque origine doit être de la forme https://hôte[:port], "
+                    "sans chemin ni barre finale"
+                )
+        return ",".join(items)
+
+    @field_validator("trusted_proxy_ips")
+    @classmethod
+    def _check_trusted_proxies(cls, v: str) -> str:
+        for raw in v.split(","):
+            raw = raw.strip()
+            if raw:
+                ipaddress.ip_address(raw)  # ValueError si invalide ou si c'est un réseau
+        return v
+
+    @property
+    def allowed_origin_list(self) -> list[str]:
+        return [x.strip() for x in self.allowed_origins.split(",") if x.strip()]
+
+    @property
+    def trusted_proxy_ip_set(self) -> frozenset[str]:
+        return frozenset(
+            str(ipaddress.ip_address(x.strip())) for x in self.trusted_proxy_ips.split(",") if x.strip()
+        )
 
     @property
     def agent_allowed_ip_list(self) -> list[str]:
