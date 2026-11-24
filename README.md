@@ -254,6 +254,36 @@ docker compose build backend && docker compose up -d backend   # si le code back
 ./deploy/verify-all.sh
 ```
 
+## Sauvegardes chiffrées (Phase 14a)
+
+Chaque jour à 03:15 UTC (`akwaba-backup.timer`) : `pg_dump` vérifié + `.env` (indispensable :
+`FIELD_ENCRYPTION_KEY` déchiffre les secrets agent) + métadonnées, dans une archive **chiffrée avec age**
+pour votre clé **publique** → `backups/auto/akwaba-<date>.tar.age` (600). Le dimanche, le dump est
+**réellement restauré** dans un conteneur PostgreSQL temporaire (sans réseau ni volume, détruit ensuite)
+et comparé à la production (révision, tables, déclencheurs, lignes). Rotation : 7 jours, 4 semaines,
+6 mois ; dumps avant déploiement : les 5 plus récents. Copie sur l'Exit Node par `rsync`/SSH avec une
+clé dédiée en **écriture seule** (`rrsync -wo`) : un serveur compromis ne peut ni relire ni effacer les
+copies. La clé **privée** age n'est jamais sur le serveur ni sur l'Exit Node.
+
+```bash
+# 1. Sur VOTRE poste (pas le serveur) — garder akwaba-backup.key en lieu sûr : sans elle, aucune restauration.
+age-keygen -o akwaba-backup.key              # affiche « Public key: age1… »
+# 2. Sur le serveur (utilisateur du dépôt, pas root) :
+sudo apt install age rsync openssh-client
+./deploy/backup/setup-server.sh --recipient age1… --exit-node <nom-tailnet-de-l-exit-node>
+# 3. Sur l'Exit Node, avec la ligne « ssh-ed25519 … » affichée à l'étape 2 :
+sudo sh deploy/backup/setup-exit-node.sh 'ssh-ed25519 AAAA… akwaba-backup@serveur'
+# 4. Sur le serveur : première sauvegarde avec test de restauration, puis contrôle global
+./deploy/backup/backup.sh --test-restore
+./deploy/verify-all.sh                        # section « Sauvegardes (Phase 14a) »
+```
+
+État : `backups/auto/status.json` et `journalctl -u akwaba-backup`. `verify-all.sh` échoue si la dernière
+sauvegarde ou copie a plus de 26 h, si le dernier test de restauration réussi a plus de 8 jours, ou si le
+minuteur est inactif. Lire une archive (sur votre poste) :
+`age -d -i akwaba-backup.key akwaba-<date>.tar.age | tar -xv` → `akwaba.dump`, `env`, `meta.json`.
+La restauration en production est l'objet du lot 14b.
+
 ## Déploiement (Phase 13b) — procédure standard
 
 ```bash

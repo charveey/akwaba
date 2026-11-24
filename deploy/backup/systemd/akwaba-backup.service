@@ -1,0 +1,19 @@
+# AKWABA — sauvegarde chiffrée quotidienne (Phase 14a). Installé par deploy/backup/setup-server.sh :
+# __USER__ et __REPO__ y sont remplacés par l'utilisateur du dépôt et son chemin.
+[Unit]
+Description=Akwaba - sauvegarde chiffrée (pg_dump + .env, age) et copie sur l'Exit Node
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__
+ExecStart=__REPO__/deploy/backup/backup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
