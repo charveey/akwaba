@@ -254,6 +254,28 @@ docker compose build backend && docker compose up -d backend   # si le code back
 ./deploy/verify-all.sh
 ```
 
+## Mise à jour de l'agent sur l'Exit Node (Phase 13c)
+
+Sur l'Exit Node, avec le code du dépôt (`git pull` sur l'Exit Node, ou `scp -r agent/akwaba_agent pi:/tmp/`) :
+
+```bash
+sudo sh deploy/agent/update.sh /chemin/vers/akwaba_agent --plan   # vérifications + ping, rien n'est modifié
+sudo sh deploy/agent/update.sh /chemin/vers/akwaba_agent
+```
+
+1. Vérifications : agent déjà installé (sinon `install.sh`), nouveau code complet et compilable par
+   `/usr/bin/python3` ; code identique → rien à faire.
+2. **Ping signé avec le NOUVEAU code** (copie temporaire, utilisateur `akwaba-agent`, `agent.ini` et secret
+   réels) : configuration illisible ou refus du backend → **rien n'est modifié**.
+3. Bascule : code actuel conservé dans `/opt/akwaba-agent/precedent`, nouveau code installé (root, lecture seule).
+4. `systemctl restart akwaba-agent`, puis contrôle : service actif, aucun redémarrage spontané, aucune
+   trace d'erreur dans le journal, nouveau ping. **En cas d'échec, retour automatique** au code précédent
+   (le code refusé est gardé dans `/opt/akwaba-agent/echec` pour analyse).
+
+Le script ne modifie jamais `agent.ini`, le secret, la règle sudoers, l'unité systemd (il signale seulement
+une différence avec celle du dépôt), le spool ni la collecte. Les lots produits pendant le redémarrage restent
+dans le spool et partent au retour. Côté serveur, `./deploy/verify-all.sh` confirme la réception (« Agent et HMAC »).
+
 ## Déploiement du lot 13a (images figées, durcissement, journaux bornés)
 
 Images figées : `postgres:16.16-trixie`, `python:3.12.16-slim-trixie` (backend), `nginx:1.30.8-alpine`.
