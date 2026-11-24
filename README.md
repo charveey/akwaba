@@ -235,6 +235,27 @@ affiche l'acteur issu de la session (`actor_display`, `actor_kind`) ; les tentat
 échouées ne sont jamais attribuées au compte visé ; les clés sensibles des détails sont masquées à la
 lecture, sans réécriture des événements.
 
+## Vérification globale du serveur (Phase 12d)
+
+```bash
+./deploy/verify-all.sh          # lecture seule ; reprend verify-11a.sh puis les contrôles ci-dessous
+```
+
+En plus des contrôles du lot 11a : code servi = code du dépôt (frontend monté dans Nginx, image
+backend), Alembic à jour (tête unique, `alembic check` sans écart), déclencheurs d'immuabilité actifs,
+aucune décision appliquée, agent et HMAC actifs (lot et requête signée acceptés depuis moins de 5 min),
+aucun secret de `.env` dans les réponses publiques ni dans les journaux (24 h), `.env` en `600` et non
+suivi par git. Le script n'exécute **aucune** correction : il affiche la commande à lancer.
+
+**Après tout changement de branche sur le serveur** (`git checkout`, `git pull`), Nginx peut rester sur
+l'ancien dossier `frontend` (montage orphelin : `/` ne répond plus, 8443 injoignable) :
+
+```bash
+docker compose up -d --force-recreate web       # conteneur sans données ; base, backend, 8000 et Tailscale intacts
+docker compose build backend && docker compose up -d backend   # si le code backend a changé
+./deploy/verify-all.sh
+```
+
 ## Tests
 
 ```bash
@@ -245,4 +266,5 @@ TEST_DATABASE_URL=... python3 -m pytest tests/e2e            # Chrome headless �
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_agent_backend_12a.py   # agent réel → HMAC → backend (Phase 12a)
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_business_journeys_12b.py # parcours métier complets (Phase 12b)
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_security_12c.py          # sécurité transversale, toutes routes et pages (Phase 12c)
+TEST_DATABASE_URL=... tests/run-all.sh          # les quatre suites + récapitulatif (--rapide : sans bout en bout)
 ```
