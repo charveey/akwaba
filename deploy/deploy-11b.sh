@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# HISTORIQUE (Phase 13b) : utiliser désormais ./deploy/deploy.sh, procédure standard pour tout déploiement.
 # AKWABA — Phase 11b : membres, abonnements, paiements, relances (backend + migration 0011).
 #
 #     ./deploy/deploy-11b.sh --check     # contrôles seuls
