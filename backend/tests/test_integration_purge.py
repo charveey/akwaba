@@ -219,8 +219,8 @@ def test_a_purge_job_is_recorded_and_the_lock_is_exclusive(ag):
     [(status, details, error)] = rows(
             ag, "SELECT status, details, error FROM job_runs WHERE job_name = 'purge' ORDER BY id DESC LIMIT 1")
     assert (status, error) == ("SUCCESS", None) and details["deleted"]["agent_heartbeats"] >= 1
-    with ag.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-        conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": svc.LOCK_KEY})
+    conn = ag.engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": svc.LOCK_KEY})
     try:
         assert svc.run_purge_job(ag.maker, FixedClock(NOW)) is None
     finally:
