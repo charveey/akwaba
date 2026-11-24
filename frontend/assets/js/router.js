@@ -22,7 +22,23 @@ export const NAV = [
   { path: "/parametres", title: "Paramètres", icon: "settings", lot: "11a" },
 ];
 
+/** Pages de détail (non présentes dans la sidebar) : `nav` = entrée active de la sidebar. */
+export const DETAIL_ROUTES = [
+  { pattern: /^\/membres\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/, key: "/membres/:id", title: "Fiche membre", nav: "/membres", params: ["id"] },
+];
+
 const PRIVATE_PATHS = new Set(NAV.map((r) => r.path));
+
+function matchDetail(path) {
+  for (const d of DETAIL_ROUTES) {
+    const m = d.pattern.exec(path);
+    if (m) {
+      const params = Object.fromEntries(d.params.map((name, i) => [name, m[i + 1]]));
+      return { route: { path, key: d.key, title: d.title, nav: d.nav, icon: null, lot: "11b" }, params };
+    }
+  }
+  return null;
+}
 
 /** "#/membres?page=2" → { path: "/membres", query: URLSearchParams } */
 export function parseHash(hash) {
@@ -42,16 +58,16 @@ export function findRoute(path) {
 }
 
 export function isPrivatePath(path) {
-  return PRIVATE_PATHS.has(path);
+  return typeof path === "string" && (PRIVATE_PATHS.has(path) || matchDetail(path) !== null);
 }
 
 /** Destination après connexion : uniquement une page connue de l'application. */
 export function safeReturn(value) {
-  return typeof value === "string" && PRIVATE_PATHS.has(value) ? value : HOME_PATH;
+  return isPrivatePath(value) ? value : HOME_PATH;
 }
 
 export function loginHash(returnPath) {
-  return returnPath && PRIVATE_PATHS.has(returnPath) && returnPath !== HOME_PATH
+  return returnPath && isPrivatePath(returnPath) && returnPath !== HOME_PATH
     ? `#${LOGIN_PATH}?retour=${encodeURIComponent(returnPath)}`
     : `#${LOGIN_PATH}`;
 }
@@ -70,10 +86,23 @@ export function resolve(hash, authenticated) {
       ? { type: "redirect", hash: `#${safeReturn(query.get("retour"))}` }
       : { type: "login", returnTo: safeReturn(query.get("retour")) };
   }
-  const route = findRoute(path);
-  if (!route) return authenticated ? { type: "not-found", path } : { type: "redirect", hash: loginHash(null) };
+  const nav = findRoute(path);
+  const detail = nav ? null : matchDetail(path);
+  if (!nav && !detail) return authenticated ? { type: "not-found", path } : { type: "redirect", hash: loginHash(null) };
   if (!authenticated) return { type: "redirect", hash: loginHash(path) };
-  return { type: "page", route, query };
+  return nav
+    ? { type: "page", route: { ...nav, key: nav.path, nav: nav.path }, query, params: {} }
+    : { type: "page", route: detail.route, query, params: detail.params };
+}
+
+/** Remplace les paramètres de l'adresse courante sans recharger la page (filtres, pagination). */
+export function replaceQuery(path, params) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== null && v !== undefined && v !== "" && v !== false) qs.set(k, String(v));
+  }
+  const str = qs.toString();
+  globalThis.history.replaceState(null, "", `#${path}${str ? "?" + str : ""}`);
 }
 
 export function navigate(hash) {

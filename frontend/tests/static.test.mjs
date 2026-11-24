@@ -36,9 +36,10 @@ test("index.html : aucun script ni style inline, aucun gestionnaire on*", () => 
   assert.doesNotMatch(html, /\son[a-z]+=/i);
 });
 
-test("aucune ressource ni URL externe", () => {
+test("aucune ressource ni URL externe (seule exception : liens wa.me validés dans dom.js)", () => {
   for (const file of served) {
-    const src = stripComments(read(file)).replaceAll("http://www.w3.org/2000/svg", "");
+    let src = stripComments(read(file)).replaceAll("http://www.w3.org/2000/svg", "");
+    if (file.endsWith(join("js", "dom.js"))) src = src.replaceAll('"https://wa.me/"', "");
     assert.doesNotMatch(src, /https?:\/\//, relative(ROOT, file));
     assert.doesNotMatch(src, /url\(\s*["']?\/\//, relative(ROOT, file));
   }
@@ -104,5 +105,24 @@ test("textes visibles en français : pas de libellés anglais courants", () => {
   const english = /["'`>](Loading|Login|Logout|Sign in|Submit|Cancel|Settings|Dashboard|Error|Retry|Not found|Close|Password)["'`<.…]/;
   for (const file of [join(ROOT, "index.html"), ...js]) {
     assert.doesNotMatch(stripComments(read(file)), english, relative(ROOT, file));
+  }
+});
+
+test("les liens externes ne sont créés que par whatsAppLink (dom.js)", () => {
+  for (const file of js) {
+    if (file.endsWith(join("js", "dom.js"))) continue;
+    const src = stripComments(read(file));
+    assert.doesNotMatch(src, /setAttribute\(\s*["']href["']/, relative(ROOT, file));
+    assert.doesNotMatch(src, /window\.open|location\.assign|location\.href\s*=/, relative(ROOT, file));
+  }
+});
+
+test("le JavaScript ne calcule aucune échéance (le backend est la source de vérité)", () => {
+  // Interdit : arithmétique de dates (setDate, setMonth, getDate()+n…) dans les pages et composants.
+  for (const file of js) {
+    const src = stripComments(read(file));
+    assert.doesNotMatch(src, /\.set(UTC)?(Date|Month|FullYear)\s*\(/, relative(ROOT, file));
+    assert.doesNotMatch(src, /\.get(UTC)?Date\(\)\s*[+-]/, relative(ROOT, file));
+    assert.doesNotMatch(src, /86400000|864e5/, relative(ROOT, file));
   }
 });

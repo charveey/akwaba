@@ -166,6 +166,19 @@ Retour arrière : `sudo ./deploy/tailscale/serve-8443.sh --remove` (retire uniqu
 `git checkout main && docker compose down && docker compose up -d` (le volume `pgdata` est conservé ;
 la sauvegarde est dans `backups/akwaba-pre-11a-*.dump`).
 
+## Déploiement du lot 11b (membres, abonnements, paiements, relances)
+
+```bash
+git fetch origin && git checkout phase-11b-membres-abonnements
+./deploy/deploy-11b.sh --check   # révision Alembic attendue : 0010
+./deploy/deploy-11b.sh           # pg_dump, build backend, alembic upgrade head (0011), vérifications
+./deploy/verify-11a.sh           # non-régression infrastructure / sécurité
+```
+
+Migration `0011` : renomme uniquement les noms affichés des formules (1 mois → Bronze, 3 mois → Silver,
+6 mois → Gold, 12 mois → Diamond ; Platinum inchangé). Un nom modifié à la main n'est jamais écrasé.
+Retour arrière : `./deploy/deploy-11b.sh --rollback`.
+
 ## Tests
 
 ```bash

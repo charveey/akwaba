@@ -1,7 +1,8 @@
 import uuid
+from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import client_ip, get_clock, require_admin, require_csrf
@@ -33,11 +34,23 @@ def payment_methods(db: Session = Depends(get_db)) -> list[PaymentMethodOut]:
 @subscriptions_router.get("", response_model=SubscriptionPage, dependencies=[Depends(require_admin)])
 def list_subscriptions(
     member_id: uuid.UUID | None = None,
+    current_only: bool = False,
+    payment_status: Literal["PENDING", "PAID", "WAIVED"] | None = None,
+    plan_code: str | None = Query(default=None, max_length=40),
+    expiring_within_days: int | None = Query(default=None, ge=0, le=366),
+    access_status: Literal["NONE", "ACTIVE", "GRACE_PERIOD", "EXPIRED", "SUSPENDED"] | None = None,
+    renewal_status: Literal["NOT_APPLICABLE", "UP_TO_DATE", "RENEWAL_OVERDUE", "NON_RENEWAL"] | None = None,
+    payment_kind: Literal["PENDING", "NEW_MEMBER", "LATE_RENEWAL", "RENEWED"] | None = None,
+    sort: Literal["-created", "created", "expiry", "-expiry", "member", "-member"] = "-created",
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db), clock: Clock = Depends(get_clock),
 ) -> SubscriptionPage:
-    items, total = svc.list_subscriptions(db, clock, member_id=member_id, limit=limit, offset=offset)
+    items, total = svc.list_subscriptions(
+        db, clock, member_id=member_id, limit=limit, offset=offset, current_only=current_only,
+        payment_status=payment_status, plan_code=plan_code, expiring_within_days=expiring_within_days,
+        access=access_status, renewal=renewal_status, kind=payment_kind, sort=sort,
+    )
     return SubscriptionPage(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -77,14 +90,24 @@ def list_payments(
     subscription_id: uuid.UUID | None = None,
     member_id: uuid.UUID | None = None,
     status_: Literal["CONFIRMED", "VOIDED"] | None = Query(default=None, alias="status"),
+    method: str | None = Query(default=None, max_length=40),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    payment_kind: Literal["PENDING", "NEW_MEMBER", "LATE_RENEWAL", "RENEWED"] | None = None,
+    plan_changed: bool | None = None,
+    sort: Literal["-paid_at", "paid_at"] = "-paid_at",
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db), clock: Clock = Depends(get_clock),
 ) -> PaymentPage:
-    items, total = svc.list_payments(
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(422, "La date de début doit précéder la date de fin")
+    items, total, totals = svc.list_payments(
         db, subscription_id=subscription_id, member_id=member_id, pay_status=status_, limit=limit, offset=offset,
+        clock=clock, method=method, date_from=date_from, date_to=date_to, kind=payment_kind,
+        changed=plan_changed, sort=sort,
     )
-    return PaymentPage(items=items, total=total, limit=limit, offset=offset)
+    return PaymentPage(items=items, total=total, limit=limit, offset=offset, totals=totals)
 
 
 @payments_router.post("", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)

@@ -80,6 +80,25 @@ export function mount(el, ...children) {
   return append(el, children);
 }
 
+/**
+ * Seule exception aux liens externes : WhatsApp (wa.me), en HTTPS, numéro E.164 sans "+",
+ * texte encodé. Le lien est fourni par le backend (POST /api/reminders/{id}/open).
+ * Ouvrir WhatsApp ne vaut JAMAIS confirmation d'envoi.
+ */
+const WA_PREFIX = "https://wa.me/";
+const WA_RE = /^https:\/\/wa\.me\/[1-9][0-9]{7,14}\?text=[A-Za-z0-9%._~!*'()-]*$/;
+
+export function isWhatsAppUrl(url) {
+  return typeof url === "string" && url.startsWith(WA_PREFIX) && url.length <= 8000 && WA_RE.test(url);
+}
+
+export function whatsAppLink(url, label, attrs = {}) {
+  if (!isWhatsAppUrl(url)) throw new Error("lien WhatsApp refusé");
+  const a = h("a", { ...attrs, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer" }, label);
+  a.setAttribute("href", url); // validé ci-dessus ; contourne volontairement isSafeUrl
+  return a;
+}
+
 /* États génériques (chargement / vide / erreur) */
 
 export function loadingState(message = "Chargement…") {

@@ -12,5 +12,6 @@ export function toast(message, type = "info") {
     h("p", { class: "toast__message", text: message }),
     h("button", { class: "toast__close", type: "button", "aria-label": "Fermer la notification", onClick: close, text: "×" }));
   container.append(item);
+  while (container.children.length > 3) container.firstElementChild.remove();
   setTimeout(close, DURATION[variant]);
 }

@@ -114,3 +114,42 @@ def renewal_status(
     if today < grace_end(expires_on, grace_period_days):
         return RenewalStatus.RENEWAL_OVERDUE
     return RenewalStatus.NON_RENEWAL
+
+
+class PaymentKind(str, Enum):
+    """Statut métier d'un abonnement payé (Phase 11b). Calculé, jamais stocké."""
+    PENDING = "PENDING"              # En attente : paiement non confirmé
+    NEW_MEMBER = "NEW_MEMBER"        # Nouveau membre : premier abonnement payé du membre
+    LATE_RENEWAL = "LATE_RENEWAL"    # Renouvellement en retard : payé à partir de l'expiration précédente
+    RENEWED = "RENEWED"              # Membre renouvelé
+
+
+def payment_kind(
+    *,
+    payment_status: str,
+    has_predecessor: bool,
+    predecessor_expires_on: date | None,
+    paid_on: date | None,
+) -> PaymentKind:
+    """Hiérarchie validée : En attente > Nouveau membre > Renouvellement en retard > Membre renouvelé.
+
+    - has_predecessor : il existe un abonnement payé (PAID/WAIVED) antérieur du même membre
+      (le précédent de la chaîne, sinon le plus récent avant celui-ci — cas du réabonnement).
+    - predecessor_expires_on : son expires_on (exclusif) ; None s'il était illimité.
+    - paid_on : date UTC du premier paiement confirmé de cet abonnement (None si offert).
+
+    Un paiement le jour même de expires_on est en retard (expires_on est le premier jour sans accès payé).
+    Le changement de formule n'est PAS un statut : voir plan_changed().
+    """
+    if payment_status == "PENDING":
+        return PaymentKind.PENDING
+    if not has_predecessor:
+        return PaymentKind.NEW_MEMBER
+    if predecessor_expires_on is not None and paid_on is not None and paid_on >= predecessor_expires_on:
+        return PaymentKind.LATE_RENEWAL
+    return PaymentKind.RENEWED
+
+
+def plan_changed(predecessor_plan_id: object | None, plan_id: object) -> bool:
+    """Attribut secondaire « Changement de niveau » : formule différente de l'abonnement payé précédent."""
+    return predecessor_plan_id is not None and predecessor_plan_id != plan_id

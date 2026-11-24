@@ -1,7 +1,7 @@
 """Abonnements, renouvellements, paiements. Chaque écriture et son audit partagent la transaction."""
 import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -10,15 +10,17 @@ from sqlalchemy.orm import Session, aliased
 
 from app.core.config import Settings
 from app.domain.clock import Clock
+from app.domain.clock import SystemClock as _SystemClock
 from app.domain.currency import eur_cents_to_xof, settlement_for
 from app.domain.subscriptions import (
-    AccessStatus, access_status, compute_expires_on, display_end, grace_end, renewal_start, renewal_status,
+    AccessStatus, access_status, compute_expires_on, display_end, grace_end, payment_kind, plan_changed,
+    renewal_start, renewal_status,
 )
 from app.models.billing import Payment, PaymentMethod, Subscription, SubscriptionPlan
 from app.models.clients import Member
 from app.schemas.billing import (
-    PaymentCreate, PaymentInfo, PaymentMethodOut, PaymentOut, PlanOut, RenewIn, SubscriptionCreate,
-    SubscriptionOut, VoidIn,
+    PaymentCreate, PaymentInfo, PaymentMethodOut, PaymentOut, PaymentTotals, PlanOut, RenewIn,
+    SubscriptionCreate, SubscriptionOut, VoidIn,
 )
 from app.services.audit import record
 from app.services.auth import AuthContext
@@ -61,10 +63,23 @@ def _views(db: Session, clock: Clock, subs: list[Subscription]) -> list[Subscrip
     for pay, code in rows:
         payments[pay.subscription_id].append(_payment_out(pay, code))
 
+    predecessors = _predecessors(db, subs)
+    names = dict(db.execute(
+        select(Member.id, Member.full_name).where(Member.id.in_({s.member_id for s in subs}))
+    ).all())
+
     today = clock.today()
     out = []
     for s in subs:
         plan = plans[s.plan_id]
+        pred = predecessors.get(s.id)
+        confirmed = [p for p in payments[s.id] if p.status == "CONFIRMED"]
+        kind = payment_kind(
+            payment_status=s.payment_status,
+            has_predecessor=pred is not None,
+            predecessor_expires_on=pred.expires_on if pred is not None else None,
+            paid_on=_utc_date(min(p.paid_at for p in confirmed)) if confirmed else None,
+        )
         canceled = s.canceled_at is not None
         acc = access_status(
             today=today, starts_on=s.starts_on, expires_on=s.expires_on, is_unlimited=s.is_unlimited,
@@ -85,8 +100,48 @@ def _views(db: Session, clock: Clock, subs: list[Subscription]) -> list[Subscrip
             canceled_at=s.canceled_at, suspended_at=s.suspended_at,
             access_status=acc.value, renewal_status=ren.value, created_at=s.created_at,
             payments=payments[s.id],
+            member_name=names.get(s.member_id), is_current=s.id not in with_successor,
+            payment_kind=kind.value,
+            plan_changed=plan_changed(pred.plan_id if pred is not None else None, s.plan_id),
+            starts_in_future=today < s.starts_on,
         ))
     return out
+
+
+def subscription_views(db: Session, clock: Clock, subs: list[Subscription]) -> list[SubscriptionOut]:
+    """Vues calculées (accès, renouvellement, statut métier) — réutilisées par la liste des membres."""
+    return _views(db, clock, subs)
+
+
+def _predecessors(db: Session, subs: list[Subscription]) -> dict[uuid.UUID, Subscription]:
+    """Abonnement payé antérieur de chaque abonnement (Phase 11b).
+
+    - renouvellement : l'abonnement précédent de la chaîne ;
+    - sinon : le plus récent abonnement PAID/WAIVED du même membre créé avant lui (réabonnement).
+    Aucun prédécesseur = premier abonnement payé du membre.
+    """
+    member_ids = {s.member_id for s in subs}
+    history = db.execute(
+        select(Subscription).where(Subscription.member_id.in_(member_ids))
+        .order_by(Subscription.created_at, Subscription.id)
+    ).scalars().all()
+    by_id = {h.id: h for h in history}
+    result: dict[uuid.UUID, Subscription] = {}
+    for s in subs:
+        if s.previous_subscription_id is not None:
+            prev = by_id.get(s.previous_subscription_id)
+            if prev is not None:
+                result[s.id] = prev
+            continue
+        earlier = [
+            h for h in history
+            if h.member_id == s.member_id and h.id != s.id
+            and h.payment_status in ("PAID", "WAIVED")
+            and (h.created_at, str(h.id)) < (s.created_at, str(s.id))
+        ]
+        if earlier:
+            result[s.id] = earlier[-1]
+    return result
 
 
 def list_plans(db: Session) -> list[PlanOut]:
@@ -111,17 +166,57 @@ def list_payment_methods(db: Session) -> list[PaymentMethodOut]:
     return [PaymentMethodOut(id=m.id, code=m.code, name=m.name) for m in rows]
 
 
+SUBSCRIPTION_SORTS = {
+    "-created": (Subscription.created_at.desc(),),
+    "created": (Subscription.created_at.asc(),),
+    "expiry": (Subscription.expires_on.asc().nulls_last(),),
+    "-expiry": (Subscription.expires_on.desc().nulls_last(),),
+    "member": (Member.full_name.asc(),),
+    "-member": (Member.full_name.desc(),),
+}
+
+
 def list_subscriptions(
     db: Session, clock: Clock, *, member_id: uuid.UUID | None, limit: int, offset: int,
+    current_only: bool = False, payment_status: str | None = None, plan_code: str | None = None,
+    expiring_within_days: int | None = None, access: str | None = None, renewal: str | None = None,
+    kind: str | None = None, sort: str = "-created",
 ) -> tuple[list[SubscriptionOut], int]:
-    stmt = select(Subscription)
+    """Filtres SQL (simples) puis filtres calculés (accès, renouvellement, statut métier) en mémoire,
+    TOUJOURS avant la pagination. Tri secondaire déterministe : identifiant."""
+    stmt = select(Subscription).join(Member, Member.id == Subscription.member_id)
     if member_id is not None:
         stmt = stmt.where(Subscription.member_id == member_id)
-    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-    subs = db.execute(
-        stmt.order_by(Subscription.created_at.desc(), Subscription.id).limit(limit).offset(offset)
-    ).scalars().all()
-    return _views(db, clock, list(subs)), total
+    if current_only:
+        succ = aliased(Subscription)
+        stmt = stmt.where(~select(succ.id).where(succ.previous_subscription_id == Subscription.id).exists())
+    if payment_status is not None:
+        stmt = stmt.where(Subscription.payment_status == payment_status)
+    if plan_code is not None:
+        stmt = stmt.join(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id).where(
+            SubscriptionPlan.code == plan_code)
+    if expiring_within_days is not None:
+        today = clock.today()
+        stmt = stmt.where(
+            Subscription.expires_on.is_not(None),
+            Subscription.expires_on > today,
+            Subscription.expires_on <= today + timedelta(days=expiring_within_days),
+        )
+    stmt = stmt.order_by(*SUBSCRIPTION_SORTS[sort], Subscription.id)
+
+    if access is None and renewal is None and kind is None:
+        total = db.execute(select(func.count()).select_from(stmt.order_by(None).subquery())).scalar_one()
+        subs = db.execute(stmt.limit(limit).offset(offset)).scalars().all()
+        return _views(db, clock, list(subs)), total
+
+    views = _views(db, clock, list(db.execute(stmt).scalars().all()))
+    views = [
+        v for v in views
+        if (access is None or v.access_status == access)
+        and (renewal is None or v.renewal_status == renewal)
+        and (kind is None or v.payment_kind == kind)
+    ]
+    return views[offset:offset + limit], len(views)
 
 
 def get_subscription(db: Session, clock: Clock, sub_id: uuid.UUID) -> SubscriptionOut:
@@ -133,8 +228,12 @@ def get_subscription(db: Session, clock: Clock, sub_id: uuid.UUID) -> Subscripti
 
 def list_payments(
     db: Session, *, subscription_id: uuid.UUID | None, member_id: uuid.UUID | None,
-    pay_status: str | None, limit: int, offset: int,
-) -> tuple[list[PaymentOut], int]:
+    pay_status: str | None, limit: int, offset: int, clock: Clock | None = None,
+    method: str | None = None, date_from: date | None = None, date_to: date | None = None,
+    kind: str | None = None, changed: bool | None = None, sort: str = "-paid_at",
+) -> tuple[list[PaymentOut], int, PaymentTotals]:
+    """Filtres puis tri (date de paiement, puis identifiant), totaux sur TOUS les résultats filtrés,
+    pagination en dernier. Dates : jours UTC inclusifs, comme le reste du backend."""
     conds = []
     if subscription_id is not None:
         conds.append(Payment.subscription_id == subscription_id)
@@ -142,16 +241,51 @@ def list_payments(
         conds.append(Subscription.member_id == member_id)
     if pay_status is not None:
         conds.append(Payment.status == pay_status)
-    base = select(Payment.id).join(Subscription, Subscription.id == Payment.subscription_id).where(*conds)
-    total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    if method is not None:
+        conds.append(PaymentMethod.code == method)
+    if date_from is not None:
+        conds.append(Payment.paid_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
+    if date_to is not None:
+        conds.append(Payment.paid_at < datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc))
+    order = (Payment.paid_at.asc(), Payment.id.asc()) if sort == "paid_at" else (Payment.paid_at.desc(), Payment.id.asc())
     rows = db.execute(
         select(Payment, PaymentMethod.code)
         .join(PaymentMethod, PaymentMethod.id == Payment.payment_method_id)
         .join(Subscription, Subscription.id == Payment.subscription_id)
         .where(*conds)
-        .order_by(Payment.paid_at.desc(), Payment.id).limit(limit).offset(offset)
+        .order_by(*order)
     ).all()
-    return [_payment_out(p, code) for p, code in rows], total
+
+    subs = db.execute(
+        select(Subscription).where(Subscription.id.in_({p.subscription_id for p, _ in rows}))
+    ).scalars().all() if rows else []
+    views = {v.id: v for v in _views(db, clock or _SystemClock(), list(subs))}
+
+    items: list[PaymentOut] = []
+    for pay, code in rows:
+        v = views[pay.subscription_id]
+        if kind is not None and v.payment_kind != kind:
+            continue
+        if changed is not None and v.plan_changed != changed:
+            continue
+        items.append(_payment_out(pay, code).model_copy(update={
+            "member_id": v.member_id, "member_name": v.member_name, "plan_code": v.plan_code,
+            "plan_name": v.plan_name, "payment_kind": v.payment_kind, "plan_changed": v.plan_changed,
+        }))
+
+    confirmed = [p for p in items if p.status == "CONFIRMED"]
+    totals = PaymentTotals(
+        count=len(items), confirmed_count=len(confirmed), voided_count=len(items) - len(confirmed),
+        collected_xof=sum(_xof(p) for p in confirmed),
+    )
+    return items[offset:offset + limit], len(items), totals
+
+
+def _xof(p: PaymentOut) -> int:
+    """Montant encaissé en XOF d'un paiement : valeur enregistrée, aucune conversion recalculée."""
+    if p.currency == "XOF":
+        return p.amount
+    return p.settled_amount or 0
 
 
 # ---------------------------------------------------------------- aides d'écriture
