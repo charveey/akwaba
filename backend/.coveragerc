@@ -1,0 +1,11 @@
+# Couverture des tests backend (pytest-cov) : code de l'application seulement.
+# Rapports : tests/run.sh --couverture … → backend/couverture/ (html/ et lcov.info).
+[run]
+source = app
+branch = True
+data_file = couverture/.coverage
+
+[report]
+show_missing = True
+skip_empty = True
+precision = 1

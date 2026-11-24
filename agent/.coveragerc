@@ -1,0 +1,11 @@
+# Couverture des tests agent (pytest-cov) : code de l'application seulement.
+# Rapports : tests/run.sh --couverture … → agent/couverture/ (html/ et lcov.info).
+[run]
+source = akwaba_agent
+branch = True
+data_file = couverture/.coverage
+
+[report]
+show_missing = True
+skip_empty = True
+precision = 1

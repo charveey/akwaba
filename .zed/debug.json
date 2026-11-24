@@ -1,0 +1,31 @@
+[
+  {
+    "label": "Akwaba : déboguer le fichier de test courant",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "python": "$ZED_WORKTREE_ROOT/.venv/bin/python",
+    "program": "$ZED_WORKTREE_ROOT/tests/debug_pytest.py",
+    "args": ["$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "justMyCode": false
+  },
+  {
+    "label": "Akwaba : déboguer le test sous le curseur",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "python": "$ZED_WORKTREE_ROOT/.venv/bin/python",
+    "program": "$ZED_WORKTREE_ROOT/tests/debug_pytest.py",
+    "args": ["$ZED_FILE", "-k", "${ZED_SYMBOL:}"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "justMyCode": false
+  },
+  {
+    "label": "Akwaba : déboguer les tests frontend du fichier courant",
+    "adapter": "JavaScript",
+    "type": "pwa-node",
+    "request": "launch",
+    "runtimeArgs": ["--test"],
+    "program": "$ZED_FILE",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend"
+  }
+]

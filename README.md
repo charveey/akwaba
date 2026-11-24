@@ -381,6 +381,35 @@ docker compose up -d                  # recrée postgres, backend et web (config
 ./deploy/verify-all.sh                # reprend verify-11a.sh
 ```
 
+## Développement : tests depuis Zed et VS Code
+
+Une seule fois sur le poste, depuis l'éditeur : tâche **« Akwaba : préparer l'environnement (une fois) »**
+(VS Code : `Terminal › Run Task` ; Zed : `task: spawn`), ou `tests/setup-dev.sh`. Elle crée `.venv`
+(Python 3.12 de préférence), installe les dépendances figées puis les outils de test, et démarre la base de
+test jetable si Docker est disponible (`tests/test-db.sh up` : PostgreSQL 16 sur 127.0.0.1:5433, en mémoire,
+écrit `.env.test`). Relançable sans risque. Dans VS Code, ensuite : « Developer: Reload Window ».
+
+- **Zed** : ouvrir le dossier du dépôt. Les boutons ▶ dans la marge des tests Python et JavaScript lancent
+  le test sous le curseur (ou le fichier) dans le bon répertoire. Palette `task: spawn` → « Akwaba : … »
+  (tous les tests, tests rapides, fichier courant, base de test).
+- **VS Code** : ouvrir **`akwaba.code-workspace`** (pas le dossier seul). Le panneau « Tests » découvre
+  backend, agent et infra/bout en bout, chacun dans son répertoire, avec `.env.test` ; ▶ et 🐞 par test.
+  Tâches : `Terminal › Run Task` → « Akwaba : … » ; `Run Test Task` lance tous les tests.
+- **Couverture** : tâche « Akwaba : couverture du fichier courant » ou « … complète » (`tests/run.sh
+  --couverture …`) → résumé dans le terminal, `backend|agent/couverture/html/index.html`, et `lcov.info`
+  par composant (affiché dans la marge par l'extension recommandée Coverage Gutters). VS Code : aussi
+  « Run Tests with Coverage » dans le panneau « Tests ». Non mesurée pour `tests/nginx|deploy|e2e`.
+- **Débogueur** : Zed (`debugger: start`, F4) et VS Code (Run and Debug, F5) proposent « Akwaba : déboguer
+  le fichier de test courant / le test sous le curseur / les tests frontend ». Les points d'arrêt
+  fonctionnent dans les tests et dans le code testé (`app/…`, `akwaba_agent/…`) : pytest tourne dans le
+  processus débogué (`tests/debug_pytest.py`). VS Code : aussi le bouton 🐞 de chaque test.
+- **Ligne de commande** : `tests/run.sh [fichier] [-k test]` choisit le bon lanceur (`--plan` pour voir
+  la commande) ; `tests/run.sh` seul lance les quatre suites.
+
+`.env.test` ne contient que l'URL de la base de test et n'est jamais commité ; `.env` (production) n'est
+jamais lu par les tests. Sans base de test, les tests PostgreSQL sont simplement ignorés. Les tests de
+bout en bout demandent en plus Nginx et Chrome/Chromium ; les tests de sauvegarde réels demandent root.
+
 ## Tests
 
 ```bash

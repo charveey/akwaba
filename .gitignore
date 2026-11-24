@@ -1,5 +1,6 @@
 # Secrets
 .env
+.env.test
 *.key
 *.pem
 protected.toml
@@ -10,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.coverage
+.coverage.*
+couverture/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
@@ -32,6 +36,12 @@ tests/fixtures/raw/
 
 # IDE / OS
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!backend/.vscode/settings.json
+!agent/.vscode/settings.json
 .DS_Store
 .zed/settings.json
