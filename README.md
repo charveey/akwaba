@@ -238,4 +238,5 @@ cd frontend && node --test tests/*.test.mjs                  # Node >= 22, aucun
 python3 -m pytest tests/nginx tests/deploy                   # Nginx réel + invariants Compose / scripts
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e            # Chrome headless → TLS → Nginx → backend → PostgreSQL
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_agent_backend_12a.py   # agent réel → HMAC → backend (Phase 12a)
+TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_business_journeys_12b.py # parcours métier complets (Phase 12b)
 ```
