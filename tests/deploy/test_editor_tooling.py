@@ -109,12 +109,13 @@ def _tasks():
 def test_every_editor_task_calls_an_existing_executable_script():
     vscode, zed = _tasks()
     for t in vscode:
-        script = ROOT / t["command"].replace("${workspaceFolder}/", "")
+        script = ROOT / t["command"].replace("${workspaceFolder}/", "").split(" ")[0]
         assert script.exists() and os.access(script, os.X_OK), t["label"]
     for t in zed:
         # Chemin ABSOLU : Zed lance `bash -i -c`, et un ~/.bashrc qui change de répertoire casserait un chemin relatif.
-        assert t["command"].startswith("$ZED_WORKTREE_ROOT/"), t["label"]
-        script = ROOT / t["command"].replace("$ZED_WORKTREE_ROOT/", "")
+        cmd = t["command"].lstrip('"')
+        assert cmd.startswith("$ZED_WORKTREE_ROOT/"), t["label"]
+        script = ROOT / cmd.replace("$ZED_WORKTREE_ROOT/", "").split('"')[0].split(" ")[0]
         assert script.exists() and os.access(script, os.X_OK), t["label"]
         assert t.get("cwd") == "$ZED_WORKTREE_ROOT", t["label"]
     assert any(t.get("group", {}).get("isDefault") for t in vscode if isinstance(t.get("group"), dict))
@@ -141,10 +142,12 @@ def test_vscode_discovers_each_python_suite_in_its_own_folder():
 def test_shared_editor_files_are_tracked_and_env_test_is_ignored():
     def ignored(path):
         return subprocess.run(["git", "check-ignore", "-q", path], cwd=ROOT).returncode == 0
-    for path in (".vscode/settings.json", ".vscode/tasks.json", ".vscode/extensions.json", ".zed/tasks.json",
+    for path in (".vscode/settings.json", ".vscode/tasks.json", ".vscode/extensions.json", ".vscode/launch.json",
+                 ".zed/tasks.json", ".zed/debug.json", "backend/.coveragerc", "agent/.coveragerc",
                  "backend/.vscode/settings.json", "agent/.vscode/settings.json", "akwaba.code-workspace"):
         assert not ignored(path), path
-    for path in (".env.test", ".env", ".vscode/launch.json"):
+    for path in (".env.test", ".env", "backend/couverture/lcov.info", "frontend/couverture/lcov.info",
+                 "backend/couverture/.coverage", ".coverage"):
         assert ignored(path), path
 
 
@@ -179,3 +182,152 @@ def test_vscode_interpreter_points_to_the_venv_created_by_setup():
         s = json.loads((ROOT / comp / ".vscode" / "settings.json").read_text())
         assert s["python.defaultInterpreterPath"] == prefix + ".venv/bin/python"
     assert 'VENV="$ROOT/.venv"' in (ROOT / "tests" / "setup-dev.sh").read_text()
+
+
+# ------------------------------------------------------------------ débogueur : point d'arrêt réellement atteint
+
+def _dap_send(sock, seq, command, arguments=None):
+    body = json.dumps({"seq": seq, "type": "request", "command": command, "arguments": arguments or {}}).encode()
+    sock.sendall(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+
+
+def _dap_read(sock, buf):
+    while b"\r\n\r\n" not in buf[0]:
+        chunk = sock.recv(65536)
+        if not chunk:
+            raise EOFError
+        buf[0] += chunk
+    header, rest = buf[0].split(b"\r\n\r\n", 1)
+    length = int(re.search(rb"Content-Length: (\d+)", header).group(1))
+    while len(rest) < length:
+        rest += sock.recv(65536)
+    buf[0] = rest[length:]
+    return json.loads(rest[:length])
+
+
+@pytest.mark.skipif(subprocess.run(["python3", "-c", "import debugpy, pytest_cov"], capture_output=True).returncode,
+                    reason="debugpy absent (installé par tests/setup-dev.sh)")
+def test_breakpoint_in_application_code_is_hit_through_the_debug_launcher():
+    """Ce que font Zed et VS Code : debugpy lance tests/debug_pytest.py ; un point d'arrêt dans le CODE TESTÉ
+    (backend/app/core/csv_export.py) doit arrêter l'exécution, avec les variables du cadre lisibles."""
+    import socket
+    import time
+    target = ROOT / "backend" / "app" / "core" / "csv_export.py"
+    line = next(i for i, ln in enumerate(target.read_text().splitlines(), 1) if ln.strip() == 'if value is None:')
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    proc = subprocess.Popen(["python3", "-m", "debugpy", "--listen", f"127.0.0.1:{port}", "--wait-for-client",
+                             str(ROOT / "tests" / "debug_pytest.py"), "backend/tests/test_csv_and_mask.py",
+                             "-k", "neutralize"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        for _ in range(100):
+            try:
+                sock = socket.create_connection(("127.0.0.1", port), timeout=1)
+                break
+            except OSError:
+                time.sleep(0.1)
+        sock.settimeout(30)
+        buf, seq = [b""], 1
+        _dap_send(sock, seq, "initialize", {"adapterID": "debugpy", "clientID": "akwaba-test"})
+        seq += 1
+        _dap_send(sock, seq, "attach", {"justMyCode": False})
+        stopped, frame_line, frame_file, variables = None, None, None, {}
+        while True:
+            msg = _dap_read(sock, buf)
+            if msg.get("type") == "event" and msg["event"] == "initialized":
+                seq += 1
+                _dap_send(sock, seq, "setBreakpoints", {"source": {"path": str(target)}, "breakpoints": [{"line": line}]})
+                seq += 1
+                _dap_send(sock, seq, "configurationDone")
+            elif msg.get("type") == "event" and msg["event"] == "stopped":
+                stopped = msg["body"]
+                seq += 1
+                _dap_send(sock, seq, "stackTrace", {"threadId": stopped["threadId"], "levels": 1})
+            elif msg.get("type") == "response" and msg["command"] == "stackTrace":
+                top = msg["body"]["stackFrames"][0]
+                frame_line, frame_file = top["line"], top["source"]["path"]
+                seq += 1
+                _dap_send(sock, seq, "scopes", {"frameId": top["id"]})
+            elif msg.get("type") == "response" and msg["command"] == "scopes":
+                seq += 1
+                _dap_send(sock, seq, "variables", {"variablesReference": msg["body"]["scopes"][0]["variablesReference"]})
+            elif msg.get("type") == "response" and msg["command"] == "variables":
+                variables = {v["name"]: v["value"] for v in msg["body"]["variables"]}
+                seq += 1
+                _dap_send(sock, seq, "disconnect", {"terminateDebuggee": True})
+                break
+        sock.close()
+    finally:
+        try:
+            proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    assert stopped and stopped["reason"] == "breakpoint", stopped
+    assert pathlib.Path(frame_file).resolve() == target.resolve() and frame_line == line
+    assert "value" in variables, variables
+
+
+def test_debug_launcher_routes_like_run_sh():
+    cases = {
+        ("backend/tests/test_csv_and_mask.py", "TestX > test_y"): "cd backend && pytest tests/test_csv_and_mask.py -k test_y",
+        (str(ROOT / "agent" / "tests"), ""): "cd agent && pytest tests",
+        ("tests/e2e/browser_11c.mjs", ""): "cd . && pytest -q -p no:cacheprovider tests/e2e/test_dashboard_11c.py",
+    }
+    for (target, k), expected in cases.items():
+        args = ["python3", str(ROOT / "tests" / "debug_pytest.py"), target] + (["-k", k] if k else [])
+        res = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, env={**os.environ, "AKWABA_DEBUG_PLAN": "1"})
+        assert res.stdout.strip() == expected, (target, res.stdout, res.stderr)
+    res = subprocess.run(["python3", str(ROOT / "tests" / "debug_pytest.py"), "frontend/tests/lot11d.test.mjs"],
+                         cwd=ROOT, capture_output=True, text=True)
+    assert res.returncode != 0 and "configuration « Node »" in res.stderr
+
+
+def test_coverage_writes_editor_readable_reports(tmp_path):
+    res = subprocess.run([str(RUN), "--couverture", "backend/tests/test_csv_and_mask.py", "-k", "neutralize"],
+                         cwd=ROOT, capture_output=True, text=True, timeout=120,
+                         env={**os.environ, "AKWABA_PYTHON": "python3"})
+    assert res.returncode == 0, res.stdout + res.stderr
+    lcov = (ROOT / "backend" / "couverture" / "lcov.info").read_text()
+    assert "SF:app/core/csv_export.py" in lcov, "chemins relatifs au dossier backend (ouvert comme dossier VS Code)"
+    assert (ROOT / "backend" / "couverture" / "html" / "index.html").exists()
+    res = subprocess.run([str(RUN), "--couverture", "frontend/tests/lot11d.test.mjs"], cwd=ROOT, capture_output=True,
+                         text=True, timeout=120)
+    assert res.returncode == 0, res.stdout + res.stderr
+    front = (ROOT / "frontend" / "couverture" / "lcov.info").read_text()
+    assert "SF:assets/js/" in front and "SF:tests/" not in front
+
+
+def test_debug_configurations_use_the_launcher_and_the_venv():
+    vs = json.loads((ROOT / ".vscode" / "launch.json").read_text())["configurations"]
+    zed = json.loads((ROOT / ".zed" / "debug.json").read_text())
+    py_vs = [c for c in vs if c["type"] == "debugpy"]
+    py_zed = [c for c in zed if c["adapter"] == "Debugpy"]
+    assert len(py_vs) == 2 and len(py_zed) == 2
+    for c in py_vs:
+        assert c["program"] == "${workspaceFolder}/tests/debug_pytest.py" and c["justMyCode"] is False
+        assert c["python"] == "${workspaceFolder}/.venv/bin/python" and c["args"][0] == "${file}"
+    for c in py_zed:
+        assert c["program"] == "$ZED_WORKTREE_ROOT/tests/debug_pytest.py" and c["request"] == "launch"
+        assert c["python"] == "$ZED_WORKTREE_ROOT/.venv/bin/python" and c["args"][0] == "$ZED_FILE"
+    assert py_zed[1]["args"] == ["$ZED_FILE", "-k", "${ZED_SYMBOL:}"]
+    node_vs = next(c for c in vs if c["type"] == "node")
+    node_zed = next(c for c in zed if c["adapter"] == "JavaScript")
+    assert node_vs["runtimeArgs"] == ["--test"] == node_zed["runtimeArgs"]
+    assert node_vs["cwd"].endswith("/frontend") and node_zed["cwd"].endswith("/frontend")
+    assert all(c.get("label") for c in zed), "Zed exige un label par configuration"
+
+
+def test_coverage_and_debugger_tools_are_installed_by_setup_and_offered_as_tasks():
+    setup = (ROOT / "tests" / "setup-dev.sh").read_text()
+    assert '"pytest-cov>=5"' in setup and '"debugpy>=1.8"' in setup
+    vscode, zed = _tasks()
+    for tasks in (vscode, zed):
+        labels = [t["label"] for t in tasks]
+        assert "Akwaba : couverture du fichier courant" in labels
+        assert "Akwaba : couverture complète (backend, agent, frontend)" in labels
+    rec = json.loads((ROOT / ".vscode" / "extensions.json").read_text())["recommendations"]
+    assert {"ms-python.debugpy", "ryanluker.vscode-coverage-gutters"} <= set(rec)
+    for comp, pkg in (("backend", "app"), ("agent", "akwaba_agent")):
+        rc = (ROOT / comp / ".coveragerc").read_text()
+        assert f"source = {pkg}" in rc and "branch = True" in rc

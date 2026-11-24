@@ -15,7 +15,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLAN=0; [[ "${1:-}" == --plan ]] && PLAN=1
 VENV="$ROOT/.venv"
-TOOLS=("pytest>=8" "httpx>=0.27" "packaging")
+TOOLS=("pytest>=8" "httpx>=0.27" "packaging" "pytest-cov>=5" "debugpy>=1.8")
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 do_() { if (( PLAN )); then echo "  $*"; else "$@" || { echo "ÉCHEC : $*" >&2; exit 1; }; fi; }
 
@@ -39,7 +39,7 @@ fi
 say "2/3 Dépendances"
 do_ "$VENV/bin/python" -m pip install -q --disable-pip-version-check -r "$ROOT/backend/requirements.lock"
 do_ "$VENV/bin/python" -m pip install -q --disable-pip-version-check "${TOOLS[@]}"
-(( PLAN )) || "$VENV/bin/python" -c 'import fastapi, sqlalchemy, pytest, httpx; print("  OK : fastapi", fastapi.__version__, "· pytest", pytest.__version__)'
+(( PLAN )) || "$VENV/bin/python" -c 'import fastapi, sqlalchemy, pytest, httpx, pytest_cov, debugpy; print("  OK : fastapi", fastapi.__version__, "· pytest", pytest.__version__, "· couverture et débogueur prêts")'
 
 say "3/3 Base de test"
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then

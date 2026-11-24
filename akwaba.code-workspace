@@ -1,17 +1,37 @@
 {
   "folders": [
-    { "name": "backend", "path": "backend" },
-    { "name": "agent", "path": "agent" },
-    { "name": "frontend", "path": "frontend" },
-    { "name": "infra et bout en bout", "path": "." }
+    {
+      "name": "backend",
+      "path": "backend"
+    },
+    {
+      "name": "agent",
+      "path": "agent"
+    },
+    {
+      "name": "frontend",
+      "path": "frontend"
+    },
+    {
+      "name": "infra et bout en bout",
+      "path": "."
+    }
   ],
   "settings": {
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "python.testing.autoTestDiscoverOnSaveEnabled": true,
-    "files.exclude": { "**/__pycache__": true, "**/.pytest_cache": true }
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true
+    }
   },
   "extensions": {
-    "recommendations": ["ms-python.python", "ms-python.vscode-pylance"]
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "ms-python.debugpy",
+      "ryanluker.vscode-coverage-gutters"
+    ]
   }
 }

@@ -100,6 +100,30 @@
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : couverture du fichier courant",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run.sh",
+      "args": [
+        "--couverture",
+        "${file}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Akwaba : couverture complète (backend, agent, frontend)",
+      "type": "shell",
+      "command": "${workspaceFolder}/tests/run.sh --couverture ${workspaceFolder}/backend && ${workspaceFolder}/tests/run.sh --couverture ${workspaceFolder}/agent && ${workspaceFolder}/tests/run.sh --couverture ${workspaceFolder}/frontend",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "problemMatcher": []
     }
   ]
 }

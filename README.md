@@ -366,6 +366,14 @@ test jetable si Docker est disponible (`tests/test-db.sh up` : PostgreSQL 16 sur
 - **VS Code** : ouvrir **`akwaba.code-workspace`** (pas le dossier seul). Le panneau « Tests » découvre
   backend, agent et infra/bout en bout, chacun dans son répertoire, avec `.env.test` ; ▶ et 🐞 par test.
   Tâches : `Terminal › Run Task` → « Akwaba : … » ; `Run Test Task` lance tous les tests.
+- **Couverture** : tâche « Akwaba : couverture du fichier courant » ou « … complète » (`tests/run.sh
+  --couverture …`) → résumé dans le terminal, `backend|agent/couverture/html/index.html`, et `lcov.info`
+  par composant (affiché dans la marge par l'extension recommandée Coverage Gutters). VS Code : aussi
+  « Run Tests with Coverage » dans le panneau « Tests ». Non mesurée pour `tests/nginx|deploy|e2e`.
+- **Débogueur** : Zed (`debugger: start`, F4) et VS Code (Run and Debug, F5) proposent « Akwaba : déboguer
+  le fichier de test courant / le test sous le curseur / les tests frontend ». Les points d'arrêt
+  fonctionnent dans les tests et dans le code testé (`app/…`, `akwaba_agent/…`) : pytest tourne dans le
+  processus débogué (`tests/debug_pytest.py`). VS Code : aussi le bouton 🐞 de chaque test.
 - **Ligne de commande** : `tests/run.sh [fichier] [-k test]` choisit le bon lanceur (`--plan` pour voir
   la commande) ; `tests/run.sh` seul lance les quatre suites.
 

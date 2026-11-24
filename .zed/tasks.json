@@ -61,5 +61,19 @@
       "down"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Akwaba : couverture du fichier courant",
+    "command": "$ZED_WORKTREE_ROOT/tests/run.sh",
+    "args": [
+      "--couverture",
+      "$ZED_FILE"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Akwaba : couverture complète (backend, agent, frontend)",
+    "command": "\"$ZED_WORKTREE_ROOT/tests/run.sh\" --couverture \"$ZED_WORKTREE_ROOT/backend\" && \"$ZED_WORKTREE_ROOT/tests/run.sh\" --couverture \"$ZED_WORKTREE_ROOT/agent\" && \"$ZED_WORKTREE_ROOT/tests/run.sh\" --couverture \"$ZED_WORKTREE_ROOT/frontend\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
   }
 ]

@@ -5,6 +5,7 @@
 #     tests/run.sh backend/tests/test_members.py     # un fichier (chemin relatif ou absolu)
 #     tests/run.sh backend/tests/test_members.py -k test_archive    # un test (ou une classe)
 #     tests/run.sh backend/app/services/members.py   # un fichier non-test : toute la suite du composant
+#     tests/run.sh --couverture backend/tests/…      # + couverture : terminal, <composant>/couverture/html et lcov.info
 #     tests/run.sh --plan …                          # affiche la commande sans la lancer
 #
 # Il choisit le bon répertoire et le bon lanceur (pytest dans backend/ ou agent/, pytest à la racine pour
@@ -14,8 +15,11 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PLAN=0
-if [[ "${1:-}" == --plan ]]; then PLAN=1; shift; fi
+PLAN=0; COVER=0
+while [[ "${1:-}" == --plan || "${1:-}" == --couverture ]]; do
+  [[ "$1" == --plan ]] && PLAN=1 || COVER=1
+  shift
+done
 TARGET=""; KEXPR=""; EXTRA=()
 while (( $# )); do
   case "$1" in
@@ -57,23 +61,40 @@ ABS="${ABS%/.}"
 REL="${ABS#"$ROOT"/}"
 [[ "$REL" != "$ABS" ]] || { echo "hors du dépôt : $ABS" >&2; exit 2; }
 pyk=(); [[ -n "$KEXPR" ]] && pyk=(-k "$KEXPR")
+cov_py=()       # pytest-cov, configuré par <composant>/.coveragerc ; rapports dans <composant>/couverture/
+if (( COVER )); then
+  cov_py=(--cov --cov-report=term-missing:skip-covered --cov-report=html:couverture/html --cov-report=lcov:couverture/lcov.info)
+  (( PLAN )) || "$PY" -c 'import pytest_cov' 2>/dev/null \
+    || { echo "pytest-cov absent : lancer la tâche « préparer l'environnement » (tests/setup-dev.sh)" >&2; exit 1; }
+fi
 is_test_file() { [[ -d "$ABS" || "$(basename "$ABS")" == test_*.py || "$(basename "$ABS")" == conftest.py ]]; }
 
 case "$REL" in
   backend|backend/*|agent|agent/*)
     comp="${REL%%/*}"
     if is_test_file && [[ "$REL" == "$comp/tests"* ]]; then
-      run_in "$ROOT/$comp" "$PY" -m pytest "${REL#"$comp"/}" "${pyk[@]}" "${EXTRA[@]}"
+      run_in "$ROOT/$comp" "$PY" -m pytest "${REL#"$comp"/}" "${pyk[@]}" "${cov_py[@]}" "${EXTRA[@]}"
     fi
-    run_in "$ROOT/$comp" "$PY" -m pytest "${pyk[@]}" "${EXTRA[@]}"
+    run_in "$ROOT/$comp" "$PY" -m pytest "${pyk[@]}" "${cov_py[@]}" "${EXTRA[@]}"
     ;;
   frontend|frontend/*)
     nk=(); [[ -n "$KEXPR" ]] && nk=(--test-name-pattern "$KEXPR")
+    if (( COVER )); then
+      (( PLAN )) || mkdir -p "$ROOT/frontend/couverture"
+      nk+=(--experimental-test-coverage "--test-coverage-exclude=tests/**" --test-reporter=spec
+           --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=couverture/lcov.info)
+    fi
     if [[ "$REL" == *.test.mjs ]]; then
       run_in "$ROOT/frontend" node --test "${nk[@]}" "${REL#frontend/}"
     fi
     run_in "$ROOT/frontend" node --test "${nk[@]}" tests/
     ;;
+  tests/*)
+    if (( COVER )); then
+      echo "info : couverture non mesurée pour tests/nginx|deploy|e2e (scripts et processus séparés) ;" \
+           "la couverture du code vient des suites backend, agent et frontend." >&2
+    fi
+    ;;&
   tests/e2e/*.mjs)
     driver="$(grep -l -- "$(basename "$REL")" "$ROOT"/tests/e2e/test_*.py 2>/dev/null | head -n1)"
     [[ -n "$driver" ]] || driver="$ROOT/tests/e2e"
