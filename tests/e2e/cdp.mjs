@@ -27,7 +27,8 @@ export function scenario() {
   };
 }
 
-export async function connect(devtoolsPort, problems) {
+/** `requests` (facultatif) reçoit l'URL de chaque requête réseau émise par la page (lot 12c). */
+export async function connect(devtoolsPort, problems, requests = null) {
   const res = await fetch(`http://127.0.0.1:${devtoolsPort}/json/new?about:blank`, { method: "PUT" });
   const target = await res.json();
   const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -42,6 +43,7 @@ export async function connect(devtoolsPort, problems) {
       msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
       return;
     }
+    if (requests && msg.method === "Network.requestWillBeSent") requests.push(msg.params.request.url);
     if (msg.method === "Runtime.exceptionThrown") {
       problems.push(`exception: ${msg.params.exceptionDetails.text} ${msg.params.exceptionDetails.exception?.description || ""}`);
     } else if (msg.method === "Runtime.consoleAPICalled" && ["error", "warning", "assert"].includes(msg.params.type)) {

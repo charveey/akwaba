@@ -94,6 +94,11 @@ Routage par fragment (`#/membres`), thème clair par défaut et thème sombre, r
   que son horodatage reste dans la fenêtre de validité (±120 s). Impact limité : un lot rejoué est ignoré
   (`batch_id`), un heartbeat rejoué peut réenregistrer un état ancien. Reproduit par `test_known_limitation_replay_after_backend_restart` (résultat `xfail`) ;
   correction suivie dans l'issue #5 (persistance atomique des nonces en base).
+- **Limitation connue (en-têtes proxy, défense en profondeur)** : uvicorn active par défaut `--proxy-headers`
+  et fait confiance à `X-Forwarded-For` venant de `127.0.0.1`/`::1`, avant le contrôle `TRUSTED_PROXY_IPS` de
+  l'application. Sans effet en production (aucun client n'atteint le conteneur par son loopback : Nginx arrive
+  de `10.250.11.10`, l'agent de son IP tailnet), mais reproduit par
+  `test_known_limitation_uvicorn_trusts_forwarded_headers_from_loopback` (résultat `xfail`) ; correction suivie dans l'issue #8.
 - `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + limite de taille
   (l'IP seule n'authentifie jamais). **Jamais servi par Nginx** (404).
 - Admin : HTTPS via `tailscale serve --https=8443`, cookie `HttpOnly` / `Secure` / `SameSite=Strict`
@@ -239,4 +244,5 @@ python3 -m pytest tests/nginx tests/deploy                   # Nginx réel + inv
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e            # Chrome headless → TLS → Nginx → backend → PostgreSQL
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_agent_backend_12a.py   # agent réel → HMAC → backend (Phase 12a)
 TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_business_journeys_12b.py # parcours métier complets (Phase 12b)
+TEST_DATABASE_URL=... python3 -m pytest tests/e2e/test_security_12c.py          # sécurité transversale, toutes routes et pages (Phase 12c)
 ```
