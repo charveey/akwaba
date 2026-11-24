@@ -5,6 +5,8 @@
 #     ./deploy/restore.sh akwaba-<date>.tar.age --identity /chemin/akwaba-backup.key
 #     ... --restaurer-env        # remplacer aussi .env par celui de l'archive (ancien gardé à côté)
 #     ... --confirmation RESTAURER   # sans question (sinon : saisir RESTAURER)
+#     ... --verification-differee    # reprise après sinistre : verify-all.sh sera lancé plus tard, à la main
+#                                    # (Serve 8443 et l'agent ne sont pas encore en place sur un serveur neuf)
 #
 # La clé PRIVÉE age n'est pas conservée par ce script : l'apporter le temps de la restauration, puis l'effacer.
 #
@@ -25,12 +27,13 @@ BACKUP_DIR="${BACKUP_DIR:-backups}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 TRIGGERS="'audit_logs_no_truncate','audit_logs_no_update_delete','enforcement_decisions_no_truncate','enforcement_decisions_no_update_delete','expenses_guard','payments_guard','subscriptions_guard'"
 
-SRC=""; IDENTITY=""; RESTORE_ENV=0; CONFIRM=""
+SRC=""; IDENTITY=""; RESTORE_ENV=0; CONFIRM=""; DEFER_VERIFY=0
 while (( $# )); do
   case "$1" in
     --identity) IDENTITY="${2:-}"; shift 2 ;;
     --restaurer-env) RESTORE_ENV=1; shift ;;
     --confirmation) CONFIRM="${2:-}"; shift 2 ;;
+    --verification-differee) DEFER_VERIFY=1; shift ;;
     -*) echo "option inconnue : $1" >&2; exit 2 ;;
     *) SRC="$1"; shift ;;
   esac
@@ -174,7 +177,11 @@ for svc in backend web; do
   done
   ok "$svc : healthy"
 done
-"$VERIFY_ALL" || back_out "la vérification globale signale des échecs"
+if (( DEFER_VERIFY )); then
+  info "vérification globale différée (--verification-differee) : lancer ./deploy/verify-all.sh une fois Serve 8443 et l'agent en place"
+else
+  "$VERIFY_ALL" || back_out "la vérification globale signale des échecs"
+fi
 printf '\n\033[32mRestauration terminée.\033[0m Ancienne base : %s (à supprimer plus tard, une fois satisfait :\n' "$OLD_DB"
 printf "  docker compose exec -T postgres psql -U %s -d postgres -c 'DROP DATABASE %s'). Sauvegarde : %s\n" "$pg_user" "$OLD_DB" "$SAFETY"
 [[ -n "$IDENTITY" ]] && echo "Pensez à effacer la clé privée de ce serveur : shred -u $IDENTITY"

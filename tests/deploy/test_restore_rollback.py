@@ -290,6 +290,15 @@ def test_failed_verification_prints_how_to_swap_back(env):
     assert re.search(r"ALTER DATABASE \w+_avant_restauration_\w+ RENAME TO " + env["prod"], out)
 
 
+@needs_pg
+def test_deferred_verification_for_disaster_recovery(env):
+    """Serveur neuf : Serve 8443 et l'agent ne sont pas encore en place, verify-all échouerait forcément."""
+    rc, out = restore(env, env["dump"], "--confirmation", "RESTAURER", "--verification-differee", FAKE_VERIFY_RC="1")
+    assert rc == 0, out
+    assert "verify-all-appelé" not in out and "vérification globale différée" in out
+    assert members(env["prod"]) == "Avant la sauvegarde"
+
+
 # ------------------------------------------------------------------ rollback.sh
 
 FAKE_ROLLBACK_DOCKER = r'''#!/usr/bin/env python3
