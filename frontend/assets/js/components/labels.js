@@ -173,3 +173,27 @@ AUDIT_ACTIONS["quarantine.dismissed"] = "Dossier écarté par un administrateur"
 AUDIT_ACTIONS["identity_exemption.ended"] = "Exemption terminée";
 AUDIT_ACTIONS["protected_identity.added"] = "Protection manuelle ajoutée";
 AUDIT_ACTIONS["protected_identity.removed"] = "Protection manuelle retirée";
+
+AUDIT_ACTIONS["expense.recorded"] = "Dépense enregistrée";
+AUDIT_ACTIONS["expense.voided"] = "Dépense annulée";
+AUDIT_ACTIONS["expense.corrected"] = "Dépense corrigée (ancienne annulée, nouvelle créée)";
+AUDIT_ACTIONS["expense_category.created"] = "Catégorie de dépense créée";
+AUDIT_ACTIONS["expense_category.updated"] = "Catégorie de dépense modifiée";
+AUDIT_ACTIONS["admin.login_success"] = "Connexion réussie";
+AUDIT_ACTIONS["admin.login_failed"] = "Connexion échouée";
+AUDIT_ACTIONS["admin.login_blocked"] = "Connexion bloquée (compte verrouillé)";
+AUDIT_ACTIONS["admin.logout"] = "Déconnexion";
+AUDIT_ACTIONS["admin.created"] = "Compte administrateur créé";
+AUDIT_ACTIONS["admin.password_reset"] = "Mot de passe administrateur réinitialisé";
+AUDIT_ACTIONS["reminders.generated"] = "Relances du jour générées";
+AUDIT_ACTIONS["agent.credential_created"] = "Identifiant d'agent créé";
+AUDIT_ACTIONS["agent.credential_revoked"] = "Identifiant d'agent révoqué";
+
+export const ACTOR_KIND = {
+  admin: { label: "Administrateur", variant: "info" },
+  attempt: { label: "Tentative", variant: "warning" },
+  system: { label: "Automatique", variant: "neutral" },
+  cli: { label: "Serveur (CLI)", variant: "neutral" },
+  anonymous: { label: "Anonyme", variant: "warning" },
+  unknown: { label: "Inconnu", variant: "neutral" },
+};

@@ -22,6 +22,10 @@ const PAGES = {
   "/quarantaine": () => import("./pages/quarantine.js"),
   "/quarantaine/:id": () => import("./pages/quarantine-detail.js"),
   "/exemptions": () => import("./pages/exemptions.js"),
+  "/depenses": () => import("./pages/expenses.js"),
+  "/rapports": () => import("./pages/reports.js"),
+  "/audit": () => import("./pages/audit.js"),
+  "/agent": () => import("./pages/agent.js"),
   "/parametres": () => import("./pages/settings.js"),
 };
 const placeholder = () => import("./pages/placeholder.js");

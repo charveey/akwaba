@@ -33,6 +33,7 @@ class CategoryOut(BaseModel):
     name: str
     is_active: bool
     sort_order: int
+    expense_count: int = 0      # lot 11d : dépenses rattachées (toutes, annulées comprises)
 
 
 class ExpenseCreate(BaseModel):
@@ -65,6 +66,9 @@ class ExpenseOut(BaseModel):
     voided_at: datetime | None
     void_reason: str | None
     created_at: datetime
+    # Lot 11d : liens de correction (d'après l'audit expense.corrected)
+    replaces_id: uuid.UUID | None = None
+    replaced_by_id: uuid.UUID | None = None
 
 
 class ExpensePage(BaseModel):

@@ -129,7 +129,7 @@ def get_expense(db: Session, expense_id: uuid.UUID) -> ExpenseOut:
 
 def list_expenses(
     db: Session, *, category_id: uuid.UUID | None, exp_status: str | None,
-    date_from: date | None, date_to: date | None, limit: int, offset: int,
+    date_from: date | None, date_to: date | None, limit: int | None, offset: int,
 ) -> tuple[list[ExpenseOut], int, int]:
     if date_from and date_to and date_from > date_to:
         raise _err(422, "date_from doit précéder date_to")
@@ -151,7 +151,7 @@ def list_expenses(
         .join(ExpenseCategory, ExpenseCategory.id == Expense.category_id)
         .where(*conds)
         .order_by(Expense.expense_date.desc(), Expense.created_at.desc(), Expense.id)
-        .limit(limit).offset(offset)
+        .limit(limit).offset(offset)  # limit=None : tous les résultats (export CSV)
     ).all()
     return [_expense_out(e, n) for e, n in rows], total, int(total_amount)
 
@@ -172,3 +172,65 @@ def void_expense(
     db.commit()
     name = db.execute(select(ExpenseCategory.name).where(ExpenseCategory.id == exp.category_id)).scalar_one()
     return _expense_out(exp, name)
+
+
+def correct_expense(
+    db: Session, ctx: AuthContext, clock: Clock, expense_id: uuid.UUID, data: ExpenseCreate, ip: str | None,
+) -> ExpenseOut:
+    """Lot 11d : correction atomique. Annule l'ancienne dépense (motif « Corrigée ») et crée la nouvelle,
+    dans UNE transaction. Le déclencheur d'immuabilité reste actif : aucun champ n'est modifié en place."""
+    old = db.execute(select(Expense).where(Expense.id == expense_id).with_for_update()).scalar_one_or_none()
+    if old is None:
+        raise _err(404, "Dépense introuvable")
+    if old.status == "VOIDED":
+        raise _err(409, "Dépense déjà annulée : correction impossible")
+    cat = db.get(ExpenseCategory, data.category_id)
+    if cat is None:
+        db.rollback()
+        raise _err(404, "Catégorie introuvable")
+    if not cat.is_active and cat.id != old.category_id:
+        db.rollback()
+        raise _err(409, "Catégorie désactivée")
+    if data.expense_date > clock.today():
+        db.rollback()
+        raise _err(422, "La date de dépense ne peut pas être dans le futur")
+    try:
+        old.status = "VOIDED"
+        old.voided_at = clock.now()
+        old.void_reason = "Corrigée"
+        db.flush()
+        new = Expense(category_id=cat.id, amount=data.amount, expense_date=data.expense_date,
+                      description=data.description, recorded_by_admin_id=ctx.admin.id)
+        db.add(new)
+        db.flush()
+        # Aucun texte libre (description) dans le journal append-only.
+        record(db, "expense.corrected", actor_admin_id=ctx.admin.id, entity_type="expense", entity_id=new.id,
+               ip=ip, details={"old_expense_id": str(old.id), "new_expense_id": str(new.id),
+                               "old_amount": old.amount, "new_amount": new.amount,
+                               "old_category_id": str(old.category_id), "new_category_id": str(cat.id),
+                               "new_expense_date": new.expense_date.isoformat()})
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return _expense_out(new, cat.name)
+
+
+def correction_links(db: Session, ids: list) -> dict:
+    """{expense_id: {"replaces_id": …, "replaced_by_id": …}} d'après l'audit « expense.corrected »."""
+    from app.models.audit import AuditLog
+    if not ids:
+        return {}
+    wanted = {str(i) for i in ids}
+    links: dict = {}
+    for details in db.execute(select(AuditLog.details).where(AuditLog.action == "expense.corrected")).scalars():
+        old, new = (details or {}).get("old_expense_id"), (details or {}).get("new_expense_id")
+        if old in wanted:
+            links.setdefault(old, {})["replaced_by_id"] = new
+        if new in wanted:
+            links.setdefault(new, {})["replaces_id"] = old
+    return links
+
+
+def category_usage(db: Session) -> dict:
+    return dict(db.execute(select(Expense.category_id, func.count()).group_by(Expense.category_id)).all())

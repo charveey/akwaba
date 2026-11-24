@@ -175,7 +175,54 @@ def list_audit(
         AuditEntry(
             id=a.id, occurred_at=a.occurred_at, actor_admin_id=a.actor_admin_id, actor_email=email,
             actor_label=a.actor_label, action=a.action, entity_type=a.entity_type, entity_id=a.entity_id,
-            details=a.details, ip_address=a.ip_address,
+            details=mask(a.details), ip_address=a.ip_address,
+            **dict(zip(("actor_display", "actor_kind"), actor_of(a.action, a.actor_label, a.actor_admin_id, email))),
         )
         for a, email in rows
     ], total
+
+
+# ---------------------------------------------------------------- Lot 11d : audit normalisé (lecture)
+
+import re as _re
+
+# Tentatives de connexion : le compte référencé est la CIBLE, jamais l'acteur.
+_ATTEMPTS = frozenset({"admin.login_failed", "admin.login_blocked"})
+_LABELS = {
+    "reconciler": ("Réconciliateur (automatique)", "system"),
+    "scheduler": ("Planificateur (automatique)", "system"),
+    "system": ("Système (automatique)", "system"),
+    "purge": ("Purge (automatique)", "system"),
+    "cli": ("Ligne de commande (serveur)", "cli"),
+    "anonymous": ("Anonyme (non authentifié)", "anonymous"),
+}
+_SENSITIVE = _re.compile(r"pass(word|wd|phrase)?|secret|token|csrf|api[_-]?key|cookie|authorization|credential|"
+                         r"private[_-]?key|signature|hmac", _re.I)
+MASK = "[masqué]"
+
+
+def actor_of(action: str, label, admin_id, email) -> tuple[str, str]:
+    """(libellé affiché, type d'acteur). L'acteur administratif vient de la session (actor_admin_id) ;
+    une tentative de connexion n'est jamais attribuée au compte ciblé."""
+    if action in _ATTEMPTS:
+        target = f" sur le compte {email}" if email else ""
+        return f"Tentative de connexion{target} (non authentifiée)", "attempt"
+    if label == "cli":
+        # En ligne de commande, actor_admin_id désigne le compte CONCERNÉ (créé, réinitialisé), pas l'auteur.
+        return _LABELS["cli"]
+    if admin_id is not None:
+        return email or f"Administrateur {admin_id}", "admin"
+    if label in _LABELS:
+        return _LABELS[label]
+    if label and label.startswith("agent:"):
+        return f"Agent ({label[6:]})", "system"
+    return (label or "Inconnu"), "unknown"
+
+
+def mask(value):
+    """Masquage défensif RÉCURSIF (dictionnaires imbriqués et listes) des clés sensibles."""
+    if isinstance(value, dict):
+        return {k: (MASK if isinstance(k, str) and _SENSITIVE.search(k) else mask(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [mask(v) for v in value]
+    return value

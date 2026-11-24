@@ -523,3 +523,35 @@ fieldset.field {
 details summary { cursor: pointer; font-weight: 600; margin-top: var(--sp-2); }
 .alert ul { margin: var(--sp-2) 0; padding-left: var(--sp-5); }
 .alert p:last-child { margin-bottom: 0; }
+
+/* --- Lot 11d : graphiques SVG (couleurs par classes, aucune règle inline) --------------- */
+.chart { margin: 0; }
+.chart__title { font-weight: 600; margin-bottom: var(--sp-2); display: flex; flex-direction: column; gap: 2px; }
+.chart__note { font-weight: 400; color: var(--c-text-muted); font-size: var(--fs-xs); }
+.chart__svg { width: 100%; height: auto; display: block; }
+.chart__grid line { stroke: var(--c-border); stroke-width: 1; }
+.chart__axis { stroke: var(--c-border-strong); stroke-width: 1; }
+.chart__tick, .chart__label, .chart__value { fill: var(--c-text-muted); font-size: 13px; font-family: var(--font-sans); }
+.chart__label { fill: var(--c-text); }
+.chart__bar { fill: var(--c-primary); }
+.chart__bar:hover { opacity: 0.8; }
+.chart__bar.is-secondary, .chart__swatch.is-secondary { fill: var(--c-success); background: var(--c-success); }
+.chart__bar.is-warning, .chart__swatch.is-warning { fill: var(--c-warning); background: var(--c-warning); }
+.chart__bar.is-danger, .chart__swatch.is-danger { fill: var(--c-danger); background: var(--c-danger); }
+.chart__bar.is-neutral, .chart__swatch.is-neutral { fill: var(--c-neutral); background: var(--c-neutral); }
+.chart__line { stroke: var(--c-warning); stroke-width: 2; }
+.chart__dot { fill: var(--c-warning); }
+.chart__legend { display: flex; flex-wrap: wrap; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--c-text-muted); margin-top: var(--sp-1); }
+.chart__legend-item { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.chart__swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--c-primary); display: inline-block; }
+.chart__swatch.is-line { background: var(--c-warning); }
+.chart__data { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.chart__empty { color: var(--c-text-muted); }
+.charts-grid { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); }
+.charts-grid .card + .card { margin-top: 0; }
+.stat__hint { font-size: var(--fs-xs); color: var(--c-text-muted); }
+.stat--alert .stat__value { color: var(--c-danger); }
+@media (max-width: 820px) { .charts-grid { grid-template-columns: minmax(0, 1fr); } }
+a.stat--link { color: inherit; text-decoration: none; transition: border-color var(--transition); }
+a.stat--link:hover { border-color: var(--c-primary); text-decoration: none; }
+.audit-details { max-width: 32rem; max-height: 16rem; overflow: auto; font-size: var(--fs-xs); background: var(--c-surface-2); padding: var(--sp-2); border-radius: var(--radius-sm); white-space: pre-wrap; }
