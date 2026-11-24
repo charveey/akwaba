@@ -55,7 +55,7 @@ def api(engine):
 
     app = create_app()
     app.dependency_overrides[get_db] = override
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         email = f"{uuid.uuid4().hex[:10]}@example.test"
         with engine.begin() as conn:
             admin_id = conn.execute(
@@ -91,7 +91,7 @@ def audit_rows(engine, entity_id):
 
 def test_endpoints_require_authentication(engine):
     app = create_app()
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         assert c.get("/api/members").status_code == 401
         assert c.post("/api/members", json={"full_name": "X"}).status_code == 401
 

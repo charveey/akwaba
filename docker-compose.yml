@@ -40,11 +40,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      # Seul Nginx (IP fixe ci-dessous) peut fournir l'IP réelle du client via X-Real-IP.
+      TRUSTED_PROXY_IPS: "10.250.11.10"
     networks:
       - internal
     ports:
+      # Accès local (administration, diagnostics sur le serveur).
       - "127.0.0.1:8000:8000"
-      - "${TAILNET_BIND_IP}:8000:8000"   # PROVISOIRE (phase 8c) : agent -> backend. À retirer avec l'arrivée de web.
+      # Agent de l'Exit Node → backend, en direct (HMAC + liste d'IP AGENT_ALLOWED_IPS).
+      # Permanent : l'agent ne passe pas par Nginx (qui renvoie 404 sur /api/agent/).
+      - "${TAILNET_BIND_IP}:8000:8000"
     mem_limit: 256m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
@@ -53,14 +59,62 @@ services:
       retries: 5
       start_period: 15s
 
-  # --- Activés dans les phases suivantes ---
-  # scheduler:  (Phase 5+)  APScheduler, même image que backend
-  # web:        (Phase 11)  Nginx : SPA + proxy /api. Publication prévue :
-  #   ports:
-  #     - "${TAILNET_BIND_IP}:${WEB_PORT}:80"   # JAMAIS "0.0.0.0" ni "80:80"
+  # Phase 11 : interface d'administration (fichiers statiques) + reverse proxy /api.
+  # Accès : https://<serveur>.ts.net:8443 (tailscale serve) → 127.0.0.1:8080 → web.
+  web:
+    image: nginx:1.30.8-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Sans privilèges : utilisateur nginx de l'image, aucune capacité, racine en lecture seule.
+    user: "101:101"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=101,gid=101
+      - /var/cache/nginx:size=1m,mode=0700,uid=101,gid=101
+    environment:
+      NGINX_ENTRYPOINT_QUIET_LOGS: "1"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
+      - ./frontend:/usr/share/nginx/akwaba:ro
+    networks:
+      internal:
+        ipv4_address: 10.250.11.10
+    ports:
+      # Boucle locale UNIQUEMENT : seul tailscaled (tailscale serve) y accède.
+      # JAMAIS "0.0.0.0", ni l'IP Tailscale, ni "8080:8080".
+      - "127.0.0.1:8080:8080"
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # --- Activé dans une phase suivante ---
+  # scheduler:  APScheduler, même image que backend
 
 volumes:
   pgdata:
 
 networks:
   internal:
+    # Sous-réseau explicite (Phase 11a) : Nginx a une IP fixe, seule IP de confiance
+    # pour les en-têtes proxy. Plage hors des pools Docker par défaut (172.17-31.x,
+    # 192.168.x) et du CGNAT Tailscale (100.64.0.0/10). Vérifier l'absence de
+    # chevauchement avec deploy/migrate-network-11a.sh avant tout changement.
+    # Les IP dynamiques (postgres, backend) sont prises dans 10.250.11.128/25 :
+    # 10.250.11.10 ne peut jamais être attribuée à un autre conteneur.
+    ipam:
+      config:
+        - subnet: 10.250.11.0/24
+          ip_range: 10.250.11.128/25
+          gateway: 10.250.11.1

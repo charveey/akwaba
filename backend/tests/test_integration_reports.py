@@ -56,7 +56,7 @@ def api(engine):
     app = create_app()
     app.dependency_overrides[get_db] = override
     app.dependency_overrides[get_clock] = lambda: FixedClock(datetime(2040, 1, 1, 12, 0, tzinfo=timezone.utc))
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         email = f"{uuid.uuid4().hex[:10]}@example.test"
         with engine.begin() as conn:
             conn.execute(text("INSERT INTO admin_users (email, password_hash) VALUES (:e, :h)"), {"e": email, "h": HASH})
@@ -100,7 +100,7 @@ def table(report):
 
 
 def test_reports_and_audit_require_authentication(engine):
-    with TestClient(create_app(), base_url="https://testserver") as anon:
+    with TestClient(create_app(), base_url="https://testserver", headers={"Origin": "https://testserver"}) as anon:
         for path in ("/api/reports/revenue", "/api/reports/revenue-by-plan", "/api/reports/expenses",
                      "/api/reports/profit", "/api/audit"):
             assert anon.get(path).status_code == 401

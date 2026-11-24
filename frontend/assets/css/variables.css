@@ -1,0 +1,138 @@
+/* Akwaba — jetons du design system.
+   Thème clair par défaut. Thème sombre : data-theme="dark" sur <html>,
+   ou préférence système tant qu'aucun choix explicite n'a été fait
+   (la page démarre sans data-theme : pas de flash au premier affichage). */
+
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.75rem;
+  --lh: 1.5;
+
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-7: 3rem;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --sidebar-width: 15.5rem;
+  --header-height: 3.5rem;
+  --content-max: 80rem;
+
+  --transition: 150ms ease;
+
+  /* Palette claire */
+  --c-bg: #f5f6f8;
+  --c-surface: #ffffff;
+  --c-surface-2: #f0f2f5;
+  --c-border: #e1e4e8;
+  --c-border-strong: #c9ced6;
+  --c-text: #1d2430;
+  --c-text-muted: #5b6676;
+  --c-text-inverse: #ffffff;
+
+  --c-primary: #1f5f8b;
+  --c-primary-hover: #194e73;
+  --c-primary-soft: #e6f0f7;
+  --c-focus: #3b82c4;
+
+  --c-success: #1e7b4a;
+  --c-success-soft: #e3f4ea;
+  --c-warning: #94600b;
+  --c-warning-soft: #fdf1dc;
+  --c-danger: #b42318;
+  --c-danger-soft: #fdeceb;
+  --c-info: #1f5f8b;
+  --c-info-soft: #e6f0f7;
+  --c-neutral: #4a5563;
+  --c-neutral-soft: #eceff3;
+
+  --c-sidebar-bg: #ffffff;
+  --c-sidebar-active: #e6f0f7;
+  --c-overlay: rgb(15 23 42 / 0.45);
+
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow: 0 2px 8px rgb(15 23 42 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(15 23 42 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --c-bg: #11151b;
+    --c-surface: #181d25;
+    --c-surface-2: #1f252f;
+    --c-border: #2a313c;
+    --c-border-strong: #3a4350;
+    --c-text: #e6e9ee;
+    --c-text-muted: #9aa4b2;
+    --c-text-inverse: #0f141a;
+    --c-primary: #5aa5dc;
+    --c-primary-hover: #7bb8e4;
+    --c-primary-soft: #1b3043;
+    --c-focus: #7bb8e4;
+    --c-success: #5cc48a;
+    --c-success-soft: #173426;
+    --c-warning: #e2b257;
+    --c-warning-soft: #3a2e14;
+    --c-danger: #f0857c;
+    --c-danger-soft: #3d1d1b;
+    --c-info: #5aa5dc;
+    --c-info-soft: #1b3043;
+    --c-neutral: #b4bcc8;
+    --c-neutral-soft: #262d37;
+    --c-sidebar-bg: #151a21;
+    --c-sidebar-active: #1b3043;
+    --c-overlay: rgb(0 0 0 / 0.6);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --c-bg: #11151b;
+  --c-surface: #181d25;
+  --c-surface-2: #1f252f;
+  --c-border: #2a313c;
+  --c-border-strong: #3a4350;
+  --c-text: #e6e9ee;
+  --c-text-muted: #9aa4b2;
+  --c-text-inverse: #0f141a;
+  --c-primary: #5aa5dc;
+  --c-primary-hover: #7bb8e4;
+  --c-primary-soft: #1b3043;
+  --c-focus: #7bb8e4;
+  --c-success: #5cc48a;
+  --c-success-soft: #173426;
+  --c-warning: #e2b257;
+  --c-warning-soft: #3a2e14;
+  --c-danger: #f0857c;
+  --c-danger-soft: #3d1d1b;
+  --c-info: #5aa5dc;
+  --c-info-soft: #1b3043;
+  --c-neutral: #b4bcc8;
+  --c-neutral-soft: #262d37;
+  --c-sidebar-bg: #151a21;
+  --c-sidebar-active: #1b3043;
+  --c-overlay: rgb(0 0 0 / 0.6);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}

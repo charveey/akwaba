@@ -73,7 +73,7 @@ def ag(engine):
         agent_admin.create_agent(db, name=name, ip="100.85.214.5", rotate=False, now=NOW)
     with engine.connect() as c:
         node_id = c.execute(text("SELECT id FROM exit_nodes WHERE name = :n"), {"n": name}).scalar_one()
-    with TestClient(app, base_url="https://testserver") as c:
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"}) as c:
         email = f"{uuid.uuid4().hex[:10]}@example.test"
         with engine.begin() as conn:
             admin_id = conn.execute(

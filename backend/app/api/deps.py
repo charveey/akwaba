@@ -1,3 +1,5 @@
+import ipaddress
+
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -15,7 +17,28 @@ def get_clock() -> Clock:
 
 
 def client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
+    """IP du client pour l'audit administrateur.
+
+    X-Real-IP n'est lu que si la connexion TCP vient d'un proxy de confiance
+    (TRUSTED_PROXY_IPS = l'IP fixe de Nginx). Nginx reconstruit toujours cet
+    en-tête ; venant de n'importe qui d'autre, il est ignoré.
+
+    Ne PAS utiliser pour l'agent : `agent_deps.get_peer_ip` lit l'IP TCP brute.
+    """
+    peer = request.client.host if request.client else None
+    if peer is None:
+        return None
+    try:
+        peer_n = str(ipaddress.ip_address(peer))
+    except ValueError:
+        return peer
+    if peer_n not in get_settings().trusted_proxy_ip_set:
+        return peer
+    real = request.headers.get("x-real-ip", "").strip()
+    try:
+        return str(ipaddress.ip_address(real))
+    except ValueError:
+        return peer
 
 
 def require_admin(request: Request, db: Session = Depends(get_db)) -> AuthContext:

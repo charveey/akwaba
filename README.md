@@ -19,19 +19,36 @@ Exit Node "stray" (tailscaled, conntrack, LocalAPI)
         │  akwaba-agent (Python 3.9, systemd, hors Docker, aucun port entrant)
         │  HTTP sur le tailnet (chiffré WireGuard) + HMAC
         ▼
-Serveur Oracle (tailnet) : 100.126.200.88:8080
-        ▼
-web / Nginx (SPA + /api)   ◄── admin : HTTPS via `tailscale serve --https=8443`
-        ▼
-FastAPI backend (+ APScheduler)
-        ▼
-PostgreSQL 16
+Serveur Oracle — 100.126.200.88:8000 ─────────────────────────┐  (agent : connexion directe)
+                                                              │
+Navigateur admin (tailnet)                                     │
+        │  https://ubuntu.tail14614.ts.net:8443                │
+        ▼                                                      │
+tailscale serve :8443 ──► 127.0.0.1:8080                       │
+        ▼                                                      │
+web / Nginx (10.250.11.10)  — /  : interface (fichiers statiques)
+                            — /api/agent/ : 404                │
+                            — /api/ : proxy ──────────┐        │
+        ┌─────────────── réseau Docker internal 10.250.11.0/24 ▼
+        │                  FastAPI backend :8000 ◄─────────────┘
+        │                         ▼
+        └────────────────► PostgreSQL 16 (aucun port publié)
+
+Funnel public existant : https://ubuntu.tail14614.ts.net:443 → 127.0.0.1:3000 (hors AKWABA, inchangé)
 ```
 
-Aucun port n'est exposé sur Internet. Le conteneur `web` n'écoute que sur l'IP Tailscale du serveur.
+| Point d'entrée | Liaison hôte | Usage |
+|---|---|---|
+| Backend | `127.0.0.1:8000` et `${TAILNET_BIND_IP}:8000` | Agent de l'Exit Node (HMAC + liste d'IP), diagnostics locaux |
+| Nginx (`web`) | `127.0.0.1:8080` uniquement | Administration, exposée par `tailscale serve --https=8443` |
+| PostgreSQL | aucune | Réseau Docker interne seulement |
+
+Aucun port n'est exposé sur Internet. Nginx n'est joignable que par la boucle locale du serveur
+(donc par `tailscaled`) ; le port 8443 n'est servi qu'aux appareils du tailnet (pas de Funnel).
 
 Stack : Python, FastAPI, SQLAlchemy (sync), Alembic, PostgreSQL 16, APScheduler,
-Pydantic, SPA servie par Nginx, Docker Compose (PostgreSQL, backend, scheduler, web).
+Pydantic, interface en JavaScript (modules ES natifs, sans framework, sans build) servie par
+Nginx 1.30, Docker Compose (PostgreSQL, backend, web ; scheduler à venir).
 L'agent n'est **pas** conteneurisé.
 
 ## Séparation des données
@@ -62,20 +79,40 @@ machine de quarantaine (24 h) en dry-run.
 
 ## Frontend
 
-SPA sobre et fonctionnelle, servie par Nginx, proxy `/api`.
+Interface d'administration en français, en JavaScript natif (modules ES), **sans framework,
+sans dépendance et sans étape de build** : voir [`frontend/README.md`](frontend/README.md).
+Routage par fragment (`#/membres`), thème clair par défaut et thème sombre, responsive.
 
 ## Sécurité
 
 - AKWABA n'ajoute aucun port public : accès uniquement via le tailnet.
-(L'application Next.js voisine, elle, est exposée via Tailscale Funnel : hors périmètre AKWABA.)
-- Agent → backend : HMAC-SHA256 par requête, tolérance ±300 s, anti-rejeu (`batch_id`),
+  (L'application Next.js voisine, elle, est exposée via Tailscale Funnel sur 443 : hors périmètre AKWABA, jamais modifiée.)
+- Agent → backend (`:8000`, direct) : HMAC-SHA256 par requête, tolérance ±300 s, anti-rejeu (`batch_id`),
   credential individuel, secrets chiffrés en base.
-- `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + rate limiting
-  (l'IP seule n'authentifie jamais).
-- Admin : HTTPS via `tailscale serve`, cookie HttpOnly / Secure / SameSite=Lax, CSRF,
-  verrouillage après échecs.
+- `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + limite de taille
+  (l'IP seule n'authentifie jamais). **Jamais servi par Nginx** (404).
+- Admin : HTTPS via `tailscale serve --https=8443`, cookie `HttpOnly` / `Secure` / `SameSite=Strict`
+  (chemin `/api`), sessions serveur (12 h d'inactivité, 7 jours max), verrouillage après échecs.
+- CSRF, deux protections cumulées sur toute requête mutative administrative :
+  1. jeton de session `X-CSRF-Token` (`require_csrf`) ;
+  2. **origine stricte** (`ALLOWED_ORIGINS`, obligatoire) : `Origin` — ou à défaut `Referer` — doit être
+     l'origine HTTPS du dashboard ; `Sec-Fetch-Site`, s'il est présent, doit valoir `same-origin` ;
+     **sans `Origin` ni `Referer`, la requête est refusée (403)**, connexion comprise.
+     `/api/agent/*` est exclu (l'agent n'est pas un navigateur ; HMAC inchangé).
+- En-têtes proxy : Nginx **reconstruit** `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto` (jamais repris
+  du navigateur ; seule la dernière entrée ajoutée par `tailscaled` est retenue). Le backend ne lit
+  `X-Real-IP` que si la connexion vient de l'IP fixe de Nginx (`TRUSTED_PROXY_IPS=10.250.11.10`).
+  Le filtrage IP de l'agent lit toujours l'adresse TCP brute.
+- Navigateur : CSP stricte (`script-src 'self'`, aucun inline, aucun `eval`, aucune ressource externe,
+  `require-trusted-types-for 'script'`), `X-Frame-Options: DENY`, `nosniff`, `Permissions-Policy` restrictive.
+  Pas de HSTS (il s'appliquerait aussi à l'hôte du Funnel).
+- Nginx sans privilèges (utilisateur 101, `cap_drop: ALL`, racine en lecture seule).
 - Tailscale REST : lecture seule (`/users`, `/devices`), droits minimaux.
 - Aucun bouton web ne permet de passer en `enforce`.
+
+> Limite connue : les cookies ne tiennent pas compte du port. Le cookie de session (`path=/api`) est
+> donc aussi envoyé par le navigateur à `https://ubuntu.tail14614.ts.net/api/*` (application du Funnel).
+> `deploy/verify-11a.sh` inventorie les routes `/api` de cette application (`NEXT_APP_DIR=...`).
 
 ## Mode V1 (dry-run)
 
@@ -109,4 +146,31 @@ cp .env.example .env      # puis renseigner les secrets
 docker compose config     # valide le fichier
 docker compose up -d postgres
 docker compose ps
+```
+
+## Déploiement de la Phase 11a (dashboard : socle)
+
+Sur le serveur, depuis la racine du dépôt :
+
+```bash
+git fetch origin && git checkout phase-11a-dashboard-socle
+# 1. Ajouter dans .env l'origine du dashboard (obligatoire, sinon le backend ne démarre pas) :
+#      ALLOWED_ORIGINS=https://ubuntu.tail14614.ts.net:8443
+./deploy/migrate-network-11a.sh --check   # contrôles seuls (chevauchement réseau, volume, .env)
+./deploy/migrate-network-11a.sh           # sauvegarde pg_dump, down (SANS -v), up, vérifications
+sudo ./deploy/tailscale/serve-8443.sh     # ajoute 8443 sans toucher à 443 / Funnel (jamais de reset)
+./deploy/verify-11a.sh                    # ports, Nginx, agent, Funnel, mode dry-run
+```
+
+Retour arrière : `sudo ./deploy/tailscale/serve-8443.sh --remove` (retire uniquement 8443), puis
+`git checkout main && docker compose down && docker compose up -d` (le volume `pgdata` est conservé ;
+la sauvegarde est dans `backups/akwaba-pre-11a-*.dump`).
+
+## Tests
+
+```bash
+cd backend && python3 -m pytest                              # unitaires (+ intégration si TEST_DATABASE_URL)
+cd frontend && node --test tests/*.test.mjs                  # Node >= 22, aucune dépendance
+python3 -m pytest tests/nginx tests/deploy                   # Nginx réel + invariants Compose / scripts
+TEST_DATABASE_URL=... python3 -m pytest tests/e2e            # Chrome headless → TLS → Nginx → backend → PostgreSQL
 ```

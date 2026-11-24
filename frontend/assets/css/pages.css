@@ -1,0 +1,57 @@
+/* Styles propres aux pages. */
+
+.page-intro {
+  color: var(--c-text-muted);
+  margin-bottom: var(--sp-5);
+  max-width: 48rem;
+}
+
+/* Connexion */
+.login {
+  width: min(24rem, 100%);
+}
+
+.login__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+
+.login__brand svg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.login__brand h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+}
+
+.login__brand p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-muted);
+}
+
+.login__footer {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--c-text-muted);
+  text-align: center;
+}
+
+/* Section en construction */
+.placeholder__lot {
+  margin-top: var(--sp-3);
+}
+
+/* Paramètres */
+.settings-grid {
+  display: grid;
+  gap: var(--sp-4);
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  align-items: start;
+}
+
+.settings-grid .card + .card { margin-top: 0; }

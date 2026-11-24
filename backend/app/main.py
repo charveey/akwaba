@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.api import agent, auth, billing, finance, health, identities, members, protected, quarantine, reminders, reports
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
+from app.core.origin import OriginCheckMiddleware
 from app.db.session import dispose_engine
 from app.jobs.reconciler import build_reconciler
 from app.jobs.purge import build_purge
@@ -42,6 +43,8 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json" if settings.enable_docs else None,
         lifespan=lifespan,
     )
+    # Vérification stricte de l'origine des requêtes mutatives (hors /api/agent/).
+    app.add_middleware(OriginCheckMiddleware, allowed_origins=settings.allowed_origin_list)
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(members.router, prefix="/api")
