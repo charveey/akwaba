@@ -9,32 +9,19 @@
 
 Aucun appel tailscale, conntrack, nftables ni iptables réel. L'identifiant agent est créé et révoqué
 avec la commande d'administration de production (`python -m app.cli create-agent / revoke-agent`).
+Outils communs : agent_harness.py.
 """
-import http.server
 import json
-import os
-import pathlib
 import re
-import shutil
-import socketserver
-import ssl
-import subprocess
-import sys
-import tempfile
-import threading
 import time
-import urllib.request
-from datetime import datetime, timezone
-from http.cookiejar import CookieJar
 
 import pytest
 from sqlalchemy import text
 
-from conftest import BACKEND, ROOT, SKIP, Backend, free_port
+from agent_harness import Admin, Device, FakeExitNode, cli, create_agent, run_agent, signed_post, spawn_agent, summary
+from conftest import ROOT, SKIP, Backend, free_port
 
 pytestmark = SKIP
-
-sys.path.insert(0, str(ROOT / "agent"))
 
 NODE_NAME = "exit-e2e-12a"
 NODE_IP = "100.85.214.5"
@@ -45,124 +32,28 @@ EXTRA_LINES = [                        # un second appareil, inconnu de tailscal
     f"tcp      6 431996 ESTABLISHED src={UNKNOWN_IP} dst=203.0.113.20 sport=41000 dport=443 "
     f"src=203.0.113.20 dst=192.168.1.99 sport=443 dport=41000 [ASSURED] mark=0 use=1",
 ]
-TIMEOUTS = {
-    "nf_conntrack_tcp_timeout_established": 432000, "nf_conntrack_tcp_timeout_syn_sent": 120,
-    "nf_conntrack_udp_timeout": 30, "nf_conntrack_udp_timeout_stream": 120, "nf_conntrack_icmp_timeout": 30,
-    "nf_conntrack_count": 420, "nf_conntrack_max": 1000, "nf_conntrack_acct": 1,
-}
 
 
 # --------------------------------------------------------------------------- environnement factice
 
-class _Whois(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):  # noqa: N802
-        addr = self.path.split("addr=", 1)[-1]
-        if addr in (CLIENT_A_IP, CLIENT_A_V6):
-            body = json.dumps({
-                "Node": {"StableID": "nClientA1", "Hostinfo": {"Hostname": "telephone-a", "ShareeNode": True}},
-                "UserProfile": {"ID": 4242, "LoginName": CLIENT_A_LOGIN.upper(), "DisplayName": "Client A"},
-            }).encode()
-            self.send_response(200)
-        else:
-            body = b"no match for IP:port"
-            self.send_response(404)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *args):
-        pass
-
-
-class _UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
-
-    def get_request(self):
-        sock, _ = super().get_request()
-        return sock, ("local", 0)          # BaseHTTPRequestHandler attend une adresse (hôte, port)
-
-
-def _write_exe(path: pathlib.Path, body: str) -> None:
-    path.write_text(f"#!{sys.executable}\n{body}")
-    path.chmod(0o755)
-
-
 @pytest.fixture(scope="module")
 def fake_host():
-    """Faux Exit Node : binaires conntrack / tailscale, socket tailscaled, répertoire netfilter."""
-    base = pathlib.Path(tempfile.mkdtemp(prefix="ak12a-", dir="/tmp"))   # chemin court (socket Unix ≤ 108 octets)
-    bin_dir, netfilter = base / "bin", base / "netfilter"
-    bin_dir.mkdir()
-    netfilter.mkdir()
-    for name, value in TIMEOUTS.items():
-        (netfilter / name).write_text(f"{value}\n")
-    lines = (ROOT / "tests" / "fixtures" / "conntrack_synthetic.txt").read_text().splitlines() + EXTRA_LINES
-    (base / "conntrack.txt").write_text("\n".join(lines) + "\n")
-    _write_exe(bin_dir / "conntrack", f"""
-import sys
-family = sys.argv[sys.argv.index("-f") + 1]
-for line in open({str(base / "conntrack.txt")!r}):
-    src = line.split("src=", 1)[1].split()[0] if "src=" in line else ""
-    if (family == "ipv6") == (":" in src):
-        sys.stdout.write(line)
-""")
-    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    status = {"Peer": {"nodekey:a": {
-        "ID": "nClientA1", "TailscaleIPs": [CLIENT_A_IP, CLIENT_A_V6], "Online": True, "Active": True,
-        "LastHandshake": now, "LastSeen": now, "LastWrite": now, "RxBytes": 1000, "TxBytes": 2000,
-        "ShareeNode": True, "ExitNode": False,
-    }}}
-    (base / "status.json").write_text(json.dumps(status))
-    _write_exe(bin_dir / "tailscale", f"""
-import sys
-assert sys.argv[1:] == ["status", "--json"], sys.argv
-sys.stdout.write(open({str(base / "status.json")!r}).read())
-""")
-    sock = base / "tailscaled.sock"
-    server = _UnixHTTPServer(str(sock), _Whois)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield {"base": base, "bin": bin_dir, "netfilter": netfilter, "sock": sock}
-    server.shutdown()
-    server.server_close()
-    shutil.rmtree(base, ignore_errors=True)
+    """Faux Exit Node : fixture conntrack synthétique du dépôt + un appareil inconnu de tailscaled."""
+    node = FakeExitNode()
+    client_a = dict(login=CLIENT_A_LOGIN.upper(), user_id=4242, stable_id="nClientA1", hostname="telephone-a")
+    node.configure([Device(CLIENT_A_IP, **client_a), Device(CLIENT_A_V6, **client_a)],
+                   extra_lines=(ROOT / "tests" / "fixtures" / "conntrack_synthetic.txt").read_text().splitlines()
+                   + EXTRA_LINES)
+    yield node
+    node.close()
 
 
-def _cli(stack, *args):
-    """Commande d'administration de production, avec la configuration du backend de test."""
-    return subprocess.run([sys.executable, "-m", "app.cli", *args], cwd=BACKEND, env=stack["backend"].env,
-                          capture_output=True, text=True, timeout=60)
+_cli = cli
 
 
 @pytest.fixture(scope="module")
 def agent(stack, fake_host):
-    res = _cli(stack, "create-agent", "--name", NODE_NAME, "--ip", NODE_IP)
-    assert res.returncode == 0, res.stderr
-    key_id = re.search(r"key_id = (agt_[0-9a-f]{16})", res.stderr).group(1)
-    secret = res.stdout.strip()
-    assert re.fullmatch(r"[0-9a-f]{64}", secret)
-    secret_file = fake_host["base"] / "agent.secret"
-    secret_file.write_text(secret + "\n")
-    secret_file.chmod(0o600)
-    return {"key_id": key_id, "secret": secret, "secret_file": secret_file,
-            "url": f"http://127.0.0.1:{stack['backend_port']}"}
-
-
-def run_agent(fake_host, agent, *args, url=None, timeout=90):
-    env = {**os.environ, "PATH": f"{fake_host['bin']}{os.pathsep}{os.environ['PATH']}"}
-    for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-        env.pop(k, None)
-    cmd = [sys.executable, str(ROOT / "tests" / "e2e" / "agent_launcher.py"), str(fake_host["sock"]),
-           "--backend-url", url or agent["url"], "--agent-id", agent["key_id"],
-           "--secret-file", str(agent["secret_file"]), "--timeouts-dir", str(fake_host["netfilter"]), *args]
-    return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout)
-
-
-def spawn_agent(fake_host, agent, *args):
-    env = {**os.environ, "PATH": f"{fake_host['bin']}{os.pathsep}{os.environ['PATH']}"}
-    cmd = [sys.executable, str(ROOT / "tests" / "e2e" / "agent_launcher.py"), str(fake_host["sock"]),
-           "--backend-url", agent["url"], "--agent-id", agent["key_id"],
-           "--secret-file", str(agent["secret_file"]), "--timeouts-dir", str(fake_host["netfilter"]), *args]
-    return subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    return create_agent(stack, fake_host, NODE_NAME, NODE_IP)
 
 
 def scalar(stack, sql, **params):
@@ -172,37 +63,6 @@ def scalar(stack, sql, **params):
 
 def node_id(stack):
     return scalar(stack, "SELECT id FROM exit_nodes WHERE name = :n", n=NODE_NAME)
-
-
-def summary(stdout: str) -> dict:
-    line = [x for x in stdout.splitlines() if x.startswith("cycles=")][-1]
-    return {k: v for k, v in (kv.split("=", 1) for kv in line.split())}
-
-
-def signed_post(agent, path, body, *, secret=None, key_id=None, now=None, nonce=None, url=None, query=""):
-    """Requête HTTP réelle signée avec le module de protocole de l'agent (mêmes en-têtes que l'agent)."""
-    from akwaba_agent.protocol import build_headers
-    from akwaba_agent.sender.client import HttpTransport
-    headers = build_headers(key_id or agent["key_id"], bytes.fromhex(secret or agent["secret"]), "POST", path, body,
-                            now=now, nonce=nonce)
-    return HttpTransport(url or agent["url"], 10).post(path + query, body, headers)
-
-
-def admin_get(stack, path):
-    """GET authentifié par la vraie chaîne d'administration : TLS (serve) → Nginx → backend."""
-    ctx = ssl.create_default_context()
-    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
-    jar = CookieJar()
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ctx),
-                                         urllib.request.HTTPCookieProcessor(jar))
-    login = urllib.request.Request(
-        stack["base"] + "/api/auth/login", method="POST",
-        data=json.dumps({"email": stack["email"], "password": stack["password"]}).encode(),
-        headers={"Content-Type": "application/json", "Origin": stack["base"]})
-    assert opener.open(login, timeout=10).status == 200
-    with opener.open(stack["base"] + path, timeout=10) as resp:
-        raw = resp.read().decode()
-    return json.loads(raw), raw
 
 
 def backend_log(stack) -> str:
@@ -221,7 +81,7 @@ def test_signed_ping_goes_straight_to_the_backend(fake_host, agent):
 
 
 def test_real_cycles_reach_the_database_and_the_admin_view(stack, fake_host, agent):
-    spool = fake_host["base"] / "spool" / "spool.db"
+    spool = fake_host.base / "spool" / "spool.db"
     spool.parent.mkdir()
     res = run_agent(fake_host, agent, "--cycles", "3", "--interval", "1", "--window", "5", "--quiet",
                     "--spool", str(spool))
@@ -255,7 +115,9 @@ def test_real_cycles_reach_the_database_and_the_admin_view(stack, fake_host, age
                   k=agent["key_id"])
 
     # Vue administrateur (lot 11d) par la vraie chaîne TLS → Nginx → backend.
-    page, raw = admin_get(stack, "/api/exit-nodes")
+    status, raw = Admin(stack).get_raw("/api/exit-nodes")
+    assert status == 200
+    page = json.loads(raw)
     node = next(n for n in page["items"] if n["name"] == NODE_NAME)
     assert node["healthy"] is True
     assert agent["key_id"] not in raw and agent["secret"] not in raw
@@ -335,7 +197,7 @@ def test_backend_outage_is_absorbed_by_the_spool(stack, fake_host, agent):
     """Backend coupé : les lots s'accumulent dans le spool ; au retour, tout part, sans perte ni doublon."""
     nid = node_id(stack)
     batches_before = scalar(stack, "SELECT count(*) FROM agent_batches WHERE exit_node_id = :n", n=nid)
-    spool = fake_host["base"] / "spool-outage" / "spool.db"
+    spool = fake_host.base / "spool-outage" / "spool.db"
     spool.parent.mkdir()
     stack["backend"].stop()
     proc = spawn_agent(fake_host, agent, "--cycles", "12", "--interval", "1", "--window", "5", "--quiet",
