@@ -94,11 +94,9 @@ Routage par fragment (`#/membres`), thème clair par défaut et thème sombre, r
   que son horodatage reste dans la fenêtre de validité (±120 s). Impact limité : un lot rejoué est ignoré
   (`batch_id`), un heartbeat rejoué peut réenregistrer un état ancien. Reproduit par `test_known_limitation_replay_after_backend_restart` (résultat `xfail`) ;
   correction suivie dans l'issue #5 (persistance atomique des nonces en base).
-- **Limitation connue (en-têtes proxy, défense en profondeur)** : uvicorn active par défaut `--proxy-headers`
-  et fait confiance à `X-Forwarded-For` venant de `127.0.0.1`/`::1`, avant le contrôle `TRUSTED_PROXY_IPS` de
-  l'application. Sans effet en production (aucun client n'atteint le conteneur par son loopback : Nginx arrive
-  de `10.250.11.10`, l'agent de son IP tailnet), mais reproduit par
-  `test_known_limitation_uvicorn_trusts_forwarded_headers_from_loopback` (résultat `xfail`) ; correction suivie dans l'issue #8.
+- **En-têtes proxy (issue #8, corrigée en Phase 13a)** : uvicorn est lancé avec `--no-proxy-headers` ;
+  `X-Forwarded-For` ne réécrit jamais l'IP client, même depuis le loopback. Seule l'application décide
+  (`TRUSTED_PROXY_IPS` = Nginx, `X-Real-IP` reconstruit par Nginx) ; la liste d'IP de l'agent lit l'adresse TCP.
 - `/api/agent/` : HMAC + allowlist de l'IP Tailscale de l'Exit Node + limite de taille
   (l'IP seule n'authentifie jamais). **Jamais servi par Nginx** (404).
 - Admin : HTTPS via `tailscale serve --https=8443`, cookie `HttpOnly` / `Secure` / `SameSite=Strict`
@@ -234,6 +232,27 @@ Le graphique « Évolution des membres » montre les nouveaux membres par mois e
 affiche l'acteur issu de la session (`actor_display`, `actor_kind`) ; les tentatives de connexion
 échouées ne sont jamais attribuées au compte visé ; les clés sensibles des détails sont masquées à la
 lecture, sans réécriture des événements.
+
+## Déploiement du lot 13a (images figées, durcissement, journaux bornés)
+
+Images figées : `postgres:16.16-trixie`, `python:3.12.16-slim-trixie` (backend), `nginx:1.30.8-alpine`.
+Dépendances Python installées depuis `backend/requirements.lock` (versions exactes + empreintes, `--require-hashes`).
+Backend : racine en lecture seule, `/tmp` en tmpfs, aucune capacité, `--no-proxy-headers` (issue #8).
+Journaux Docker : 10 Mo × 3 par conteneur. Limites : postgres 320 Mo, backend 256 Mo, web 64 Mo.
+
+```bash
+# 1. Lecture seule — la variante Debian de PostgreSQL ne doit PAS changer (collations / index texte) :
+docker compose exec postgres sh -c 'grep VERSION_CODENAME /etc/os-release; postgres --version'
+#    attendu : VERSION_CODENAME=trixie. Si « bookworm » : NE PAS déployer, remplacer -trixie par -bookworm.
+# 2. Sauvegarde puis déploiement (volume PostgreSQL conservé ; 443, 8443 et 8000 inchangés) :
+mkdir -p backups && docker compose exec -T postgres pg_dump -U "$(grep ^POSTGRES_USER= .env | cut -d= -f2)" \
+  -d "$(grep ^POSTGRES_DB= .env | cut -d= -f2)" -Fc > "backups/akwaba-pre-13a-$(date -u +%Y%m%dT%H%M%SZ).dump"
+git fetch origin && git checkout phase-13a-images-compose
+docker compose pull postgres
+GIT_COMMIT="$(git rev-parse --short HEAD)" docker compose build backend
+docker compose up -d                  # recrée postgres, backend et web (configuration modifiée)
+./deploy/verify-11a.sh
+```
 
 ## Tests
 

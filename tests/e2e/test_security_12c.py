@@ -344,17 +344,31 @@ def test_x_real_ip_from_an_untrusted_peer_is_ignored(stack):
     assert _login_direct_with_spoof(stack, "0.0.0.0", ip) == ip
 
 
-def test_known_limitation_uvicorn_trusts_forwarded_headers_from_loopback(stack):
-    """Uvicorn active par défaut --proxy-headers avec FORWARDED_ALLOW_IPS=127.0.0.1,::1 : une connexion venant
-    du loopback peut fixer l'IP client par X-Forwarded-For, avant le contrôle TRUSTED_PROXY_IPS de l'application.
-    En production, aucun client n'atteint le conteneur par son loopback (Nginx : 10.250.11.10 ; publication
-    Docker : passerelle ou IP tailnet) ; seule la sonde de santé interne l'utilise, sans en-tête.
-    Les étapes sont de vraies assertions ; seul le résultat est déclaré xfail tant que la correction
-    (`--no-proxy-headers` dans la commande du conteneur) n'est pas validée."""
-    recorded = _login_direct_with_spoof(stack, "127.0.0.1", "127.0.0.1")
-    if recorded == SPOOF["X-Forwarded-For"]:
-        pytest.xfail("Limitation connue (issue #8) : uvicorn --proxy-headers fait confiance à X-Forwarded-For depuis 127.0.0.1")
-    assert recorded == "127.0.0.1"
+def test_uvicorn_ignores_forwarded_headers_even_from_loopback(stack):
+    """Issue #8, corrigée en Phase 13a : le conteneur lance uvicorn avec --no-proxy-headers (le harnais
+    reprend les options du Dockerfile). Même depuis le loopback, X-Forwarded-For ne réécrit plus l'IP client ;
+    seule l'application décide (TRUSTED_PROXY_IPS + X-Real-IP reconstruit par Nginx)."""
+    assert _login_direct_with_spoof(stack, "127.0.0.1", "127.0.0.1") == "127.0.0.1"
+
+
+def test_agent_ip_allowlist_cannot_be_bypassed_with_forwarded_headers(stack, world):
+    """Issue #8 : la liste d'IP de l'agent lit l'adresse TCP ; un X-Forwarded-For portant une IP autorisée,
+    envoyé depuis une adresse non autorisée (ici le loopback), reste refusé."""
+    from akwaba_agent.protocol import build_headers
+    from akwaba_agent.sender.client import HttpTransport
+    port = free_port()
+    other = Backend({**stack["backend"].env, "AGENT_ALLOWED_IPS": "100.64.0.0/10"}, port,
+                    stack["work"] / "backend-agent-xff.log").start()
+    try:
+        agent = world["agent"]
+        headers = build_headers(agent["key_id"], bytes.fromhex(agent["secret"]), "POST", "/api/agent/ping", b"{}")
+        headers.update({"X-Forwarded-For": "100.64.0.9", "X-Real-IP": "100.64.0.9", "Forwarded": "for=100.64.0.9"})
+        reply = HttpTransport(f"http://127.0.0.1:{port}", 10).post("/api/agent/ping", b"{}", headers)
+    finally:
+        other.stop()
+    assert reply.status == 401
+    log = (stack["work"] / "backend-agent-xff.log").read_text()
+    assert "reason=ip_not_allowed ip=127.0.0.1" in log, log[-500:]
 
 
 # --------------------------------------------------------------------------- secrets

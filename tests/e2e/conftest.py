@@ -56,6 +56,25 @@ def wait_port(port: int, timeout: float = 20) -> None:
     raise RuntimeError(f"port {port} injoignable")
 
 
+def dockerfile_uvicorn_flags() -> list:
+    """Options uvicorn de la commande du conteneur (backend/Dockerfile), hors hôte et port.
+
+    Les tests de bout en bout lancent uvicorn avec les MÊMES options que la production (Phase 13a :
+    --no-proxy-headers, issue #8) ; un changement du Dockerfile est donc couvert automatiquement.
+    """
+    cmd = next(line for line in (BACKEND / "Dockerfile").read_text().splitlines() if line.startswith("CMD "))
+    args = json.loads(cmd[4:])
+    assert args[:2] == ["uvicorn", "app.main:app"], args
+    flags, i = [], 2
+    while i < len(args):
+        if args[i] in ("--host", "--port"):
+            i += 2
+            continue
+        flags.append(args[i])
+        i += 1
+    return flags
+
+
 class Backend:
     """Backend uvicorn réel, arrêtable et redémarrable sur le même port (lot 12a : coupure réseau de l'agent)."""
 
@@ -65,7 +84,8 @@ class Backend:
     def start(self):
         assert self.proc is None or self.proc.poll() is not None, "backend déjà démarré"
         self.proc = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", self.host, "--port", str(self.port)],
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", self.host, "--port", str(self.port),
+             *dockerfile_uvicorn_flags()],
             cwd=BACKEND, env=self.env, stdout=open(self.log, "a"), stderr=subprocess.STDOUT)
         wait_port(self.port)
         return self

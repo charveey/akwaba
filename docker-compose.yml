@@ -1,9 +1,23 @@
 name: akwaba
 
+# Phase 13a — journaux Docker bornés (10 Mo × 3 par conteneur) : le serveur n'a que 45 Go de disque.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
-    image: postgres:16
+    # Version figée (13a) : mineure ET variante Debian explicites. Changer de variante (bookworm ↔ trixie)
+    # change la glibc, donc l'ordre des collations : REINDEX obligatoire. Ne jamais passer à 17+ sans pg_upgrade.
+    image: postgres:16.16-trixie
     restart: unless-stopped
+    logging: *logging
+    # shared_buffers 64 Mo + 30 connexions × work_mem 4 Mo + maintenance 32 Mo : ~94 Mo mesurés au repos.
+    mem_limit: 320m
+    pids_limit: 128
+    shm_size: 64m
     command:
       - postgres
       - -c
@@ -34,8 +48,14 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-local}
+      # Étiquette supplémentaire par commit (13a) : l'image précédente reste disponible pour un retour arrière.
+      tags:
+        - "akwaba-backend:${GIT_COMMIT:-local}"
     image: akwaba-backend:0.1.0
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     depends_on:
       postgres:
@@ -52,6 +72,15 @@ services:
       # Permanent : l'agent ne passe pas par Nginx (qui renvoie 404 sur /api/agent/).
       - "${TAILNET_BIND_IP}:8000:8000"
     mem_limit: 256m
+    # Durcissement (13a), comme le service web : racine en lecture seule, aucune capacité, pas d'élévation.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
       interval: 15s
@@ -64,6 +93,7 @@ services:
   web:
     image: nginx:1.30.8-alpine
     restart: unless-stopped
+    logging: *logging
     depends_on:
       backend:
         condition: service_healthy
@@ -92,6 +122,7 @@ services:
       # JAMAIS "0.0.0.0", ni l'IP Tailscale, ni "8080:8080".
       - "127.0.0.1:8080:8080"
     mem_limit: 64m
+    pids_limit: 64
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 15s
