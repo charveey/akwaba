@@ -25,6 +25,8 @@ export const NAV = [
 /** Pages de détail (non présentes dans la sidebar) : `nav` = entrée active de la sidebar. */
 export const DETAIL_ROUTES = [
   { pattern: /^\/membres\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/, key: "/membres/:id", title: "Fiche membre", nav: "/membres", params: ["id"] },
+  { pattern: /^\/identites\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/, key: "/identites/:id", title: "Fiche identité", nav: "/identites", params: ["id"] },
+  { pattern: /^\/quarantaine\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/, key: "/quarantaine/:id", title: "Dossier de quarantaine", nav: "/quarantaine", params: ["id"] },
 ];
 
 const PRIVATE_PATHS = new Set(NAV.map((r) => r.path));
@@ -34,7 +36,7 @@ function matchDetail(path) {
     const m = d.pattern.exec(path);
     if (m) {
       const params = Object.fromEntries(d.params.map((name, i) => [name, m[i + 1]]));
-      return { route: { path, key: d.key, title: d.title, nav: d.nav, icon: null, lot: "11b" }, params };
+      return { route: { path, key: d.key, title: d.title, nav: d.nav, icon: null }, params };
     }
   }
   return null;

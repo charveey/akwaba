@@ -87,3 +87,89 @@ export function reminderMoment(offset) {
 export function accessBadge(status, startsInFuture = false) {
   return status === "NONE" && startsInFuture ? badge("À venir", "info") : statusBadge(ACCESS, status);
 }
+
+/* ----------------------------------------------------------------- Lot 11c */
+
+export const VERDICT = {
+  NO_DECISION: { label: "Aucune décision", variant: "neutral" },
+  PROTECTED: { label: "Protégée", variant: "info" },
+  OK: { label: "Accès valide", variant: "success" },
+  OK_IN_GRACE: { label: "En période de grâce", variant: "warning" },
+  EXPIRED_CANDIDATE: { label: "Abonnement expiré", variant: "danger" },
+  MANUAL_REVIEW: { label: "Revue manuelle", variant: "warning" },
+  UNKNOWN_IDENTITY: { label: "Identité inconnue", variant: "danger" },
+};
+
+export const QUARANTINE_STATUS = {
+  PENDING: { label: "En attente de décision", variant: "warning" },
+  AUTHORIZED: { label: "Autorisé", variant: "success" },
+  EXPIRED: { label: "Délai expiré", variant: "danger" },
+  PENDING_REVOCATION: { label: "État exceptionnel", variant: "danger" },
+  MANUAL_REVIEW: { label: "Intervention humaine requise", variant: "warning" },
+  DISMISSED: { label: "Dossier écarté", variant: "neutral" },
+};
+
+export const OPEN_STATUSES = new Set(["PENDING", "EXPIRED", "PENDING_REVOCATION", "MANUAL_REVIEW"]);
+
+export const DECISION = {
+  WOULD_BLOCK: { label: "Blocage simulé", variant: "danger" },
+  WOULD_UNBLOCK: { label: "Déblocage simulé", variant: "success" },
+};
+
+export const AMBIGUITY = {
+  ARCHIVED_MEMBER_LOGIN: { label: "Login d'un membre archivé", variant: "warning",
+    help: "Ce login a appartenu à un membre archivé et n'est rattaché à aucun membre actif." },
+  CONTACT_EMAIL_MATCH: { label: "Correspond à un e-mail de contact", variant: "warning",
+    help: "Le login correspond à l'e-mail de contact d'un membre auquel l'identité n'est pas rattachée. Simple suggestion." },
+  MULTIPLE_EXIT_NODES: { label: "Plusieurs Exit Nodes", variant: "warning",
+    help: "Le login a été observé sur au moins deux Exit Nodes distincts." },
+};
+
+export const PROTECTION_SOURCE = {
+  MANUAL: { label: "Manuelle", variant: "info" },
+  AUTO_MEMBER: { label: "Automatique (membre)", variant: "neutral" },
+  AUTO_DEVICE: { label: "Automatique (appareil)", variant: "neutral" },
+};
+
+/** Codes de motif renvoyés par le backend (évaluation et transitions). */
+export const REASONS = {
+  unresolved: "Identité non résolue",
+  activity_not_confirmed: "Activité non confirmée",
+  protected: "Identité protégée",
+  no_member: "Aucun membre associé",
+  no_subscription: "Membre sans abonnement",
+  access_active: "Abonnement actif",
+  in_grace: "Période de grâce",
+  expired_after_grace: "Abonnement expiré, grâce terminée",
+  suspended: "Abonnement suspendu",
+  no_usable_subscription: "Aucun abonnement utilisable",
+  unauthorized_active: "Identité non autorisée active",
+  needs_review: "Revue manuelle nécessaire",
+  window_elapsed: "Délai de 24 h écoulé",
+  auto_ok: "Accès redevenu valide",
+  auto_protected: "Identité protégée",
+  admin_authorized: "Autorisé par un administrateur",
+  admin_dismissed: "Écarté par un administrateur",
+};
+
+export function reason(code) {
+  return code ? REASONS[code] || code : "—";
+}
+
+export function ambiguityBadges(codes = []) {
+  return codes.map((c) => {
+    const entry = AMBIGUITY[c] || { label: c, variant: "warning" };
+    const b = badge(entry.label, entry.variant);
+    if (entry.help) b.setAttribute("title", entry.help);
+    return b;
+  });
+}
+
+AUDIT_ACTIONS["identity.reassigned"] = "Identité réaffectée à un autre membre";
+AUDIT_ACTIONS["quarantine.opened"] = "Dossier ouvert (automatique)";
+AUDIT_ACTIONS["quarantine.changed"] = "Statut du dossier modifié (automatique)";
+AUDIT_ACTIONS["quarantine.authorized"] = "Dossier autorisé par un administrateur";
+AUDIT_ACTIONS["quarantine.dismissed"] = "Dossier écarté par un administrateur";
+AUDIT_ACTIONS["identity_exemption.ended"] = "Exemption terminée";
+AUDIT_ACTIONS["protected_identity.added"] = "Protection manuelle ajoutée";
+AUDIT_ACTIONS["protected_identity.removed"] = "Protection manuelle retirée";

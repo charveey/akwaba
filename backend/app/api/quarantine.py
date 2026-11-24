@@ -29,23 +29,27 @@ def list_records(
     status: Optional[StatusName] = None,
     open_only: bool = False,
     q: Optional[str] = Query(default=None, max_length=100),
+    identity_id: Optional[uuid.UUID] = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
 ) -> QuarantinePage:
-    return views.list_records(db, status=status, q=q, open_only=open_only, limit=limit, offset=offset)
+    return views.list_records(db, status=status, q=q, open_only=open_only, limit=limit, offset=offset,
+                              clock=clock, identity_id=identity_id)
 
 
 @quarantine_router.get("/{record_id}", response_model=QuarantineDetail, dependencies=[Depends(require_admin)])
-def read_record(record_id: uuid.UUID, db: Session = Depends(get_db)) -> QuarantineDetail:
-    return views.get_record(db, record_id)
+def read_record(record_id: uuid.UUID, db: Session = Depends(get_db),
+                clock: Clock = Depends(get_clock)) -> QuarantineDetail:
+    return views.get_record(db, record_id, clock)
 
 
 def _resolve(action: str, record_id: uuid.UUID, body: Optional[ResolveIn], request: Request,
              ctx: AuthContext, db: Session, clock: Clock) -> QuarantineOut:
     svc.resolve_record(db, record_id=record_id, action=action, admin_id=ctx.admin.id, now=clock.now(),
                        note=body.note if body else None, ip=client_ip(request))
-    return views.get_record(db, record_id).record
+    return views.get_record(db, record_id, clock).record
 
 
 @quarantine_router.post("/{record_id}/authorize", response_model=QuarantineOut)
@@ -68,23 +72,26 @@ def list_decisions(
     q: Optional[str] = Query(default=None, max_length=100),
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    identity_id: Optional[uuid.UUID] = None,
+    record_id: Optional[uuid.UUID] = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> DecisionPage:
     return views.list_decisions(db, decision=decision, q=q, date_from=date_from, date_to=date_to,
-                                limit=limit, offset=offset)
+                                limit=limit, offset=offset, identity_id=identity_id, record_id=record_id)
 
 
 @exemptions_router.get("", response_model=ExemptionPage, dependencies=[Depends(require_admin)])
 def list_exemptions(
     active: Optional[bool] = None,
     q: Optional[str] = Query(default=None, max_length=100),
+    identity_id: Optional[uuid.UUID] = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> ExemptionPage:
-    return views.list_exemptions(db, active=active, q=q, limit=limit, offset=offset)
+    return views.list_exemptions(db, active=active, q=q, limit=limit, offset=offset, identity_id=identity_id)
 
 
 @exemptions_router.post("/{exemption_id}/end", response_model=ExemptionOut)
